@@ -134,7 +134,7 @@ def vis_triangulation(img1, cv2_3d, pts1, title=""):
         print(f'({x},{y:}) -> ({x_w:.1f},{y_w:.1f},{z_w:.1f})')
         img1 = cv2.circle(img1, (x, y), 1, (0, 0, 0))
         img1 = cv2.putText(img1, f'{x_w:.1f},{y_w:.1f},{z_w:.1f}', (x, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3,
-                           color=(0, 0, 255))
+                           color=(0, 0, 255), lineType=cv2.LINE_AA)
     cv_disp_img(img1, title=f"vis_triang_{title}",save=True)
 
 def vis_triangulation_compare(img1, cv2_3d, my_3d, pts1, title=""):
@@ -174,7 +174,7 @@ if __name__=="__main__":
     cv2_4d = cv2.triangulatePoints(projMatr1=p1, projMatr2=p2, projPoints1=pts1, projPoints2=pts2) # (4,n)
     cv2_3d = cv2_4d[:-1] / (cv2_4d[-1].reshape(1, -1)) # (3,n)
     my_3d_points = triangulate(pts1, pts2, p1, p2)  # (3,n)
-    # vis_triangulation(img1, cv2_3d, pts1, title="cv2")
+    vis_triangulation(img1, cv2_3d, pts1, title="cv2")
     # vis_triangulation(img1, my_3d_points, pts1, title="mine")
     # vis_triangulation_compare(img1, cv2_3d, my_3d_points, pts1)
 
