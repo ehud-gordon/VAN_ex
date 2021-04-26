@@ -44,16 +44,17 @@ def match_images(img1, img2, sig=True, to_plot=True):
     img_name = f'{orb.getDefaultName()}'
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=sig)
     matches = bf.match(desc1, desc2)
-
-    # filter matches based on y distance
-    filtered_matches = []
+    if to_plot: print(f"# matches before stereo rejection {len(matches)}")
+    # stereo rejection policy
+    stereo_matches = []
     pts1, pts2 = [], []
     for match in matches:
         y_dist = abs(kp1[match.queryIdx].pt[1] - kp2[match.trainIdx].pt[1])
         if y_dist <= MATCH_Y_DIST_MAX:
             pts1.append(kp1[match.queryIdx].pt)
             pts2.append(kp2[match.trainIdx].pt)
-            filtered_matches.append(match)
+            stereo_matches.append(match)
+    if to_plot: print(f"# matches after stereo rejection {len(stereo_matches)}, {len(matches)-len(stereo_matches)} rejected")
     # filtered_matches = sorted(filtered_matches, key=lambda x: x.distance)
     pts1 = np.array(pts1).T
     pts2 = np.array(pts2).T
@@ -77,7 +78,7 @@ def match_images(img1, img2, sig=True, to_plot=True):
     if to_plot:
         match_img = cv2.drawMatches(img1, kp1, img2, kp2, matches, None, flags=2)
         plt_disp_img(img=match_img, name=img_name, save=True)
-    return filtered_matches, pts1, pts2
+    return stereo_matches, pts1, pts2
 
 def read_cameras():
     # read camera matrices
@@ -168,6 +169,7 @@ if __name__=="__main__":
 
 
     matches, pts1, pts2 = match_images(img1, img2, sig=True, to_plot=False)  # list(n), (2Xn), (2xn)
+    exit()
     k, m1, m2 = read_cameras()  # k=(3,3) m1,m2 (3,4)
     p1 = k@m1
     p2 = k@m2
