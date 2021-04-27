@@ -1,6 +1,4 @@
-import os
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import my_code.utils as utils
 import random
@@ -58,11 +56,6 @@ def triangulate(pts1, pts2, cam_mat1, cam_mat2):
         x,y = pts1[:,i]
         x_,y_ = pts2[:, i]
         A = np.vstack((p3*x - p1, p3*y - p2, p3_*x_- p1_, p3_*y_ - p2_ ))
-        # r1 = p3*x - p1
-        # r2 = p3*y - p2
-        # r3 = p3_*x_- p1_
-        # r4 = p3_*y_ - p2_
-        # A = np.array([r1,r2,r3,r4])
         u,s,vh = np.linalg.svd(A)
         X = vh[-1,:] # (4,)
 
@@ -77,8 +70,6 @@ def triangulate(pts1, pts2, cam_mat1, cam_mat2):
         new_points[:,i] = X
     inhom_points = new_points[:-1,:] / (new_points[-1].reshape(1,-1)) # (3,n)
     return inhom_points
-
-
 
 def ex1_main():
     img1, img2 = utils.read_images(idx=0)
@@ -117,8 +108,8 @@ if __name__=="__main__":
 
     # triangulate
     k, m1, m2 = utils.read_cameras()  # k=(3,3) m1,m2 (3,4)
-    p1 = k@m1
-    p2 = k@m2
+    p1 = k@m1 # (3,4)
+    p2 = k@m2 # (3,4)
     cv2_4d = cv2.triangulatePoints(projMatr1=p1, projMatr2=p2, projPoints1=pts1, projPoints2=pts2) # (4,n)
     cv2_3d = cv2_4d[:-1] / (cv2_4d[-1].reshape(1, -1)) # (3,n)
     my_3d = triangulate(pts1=pts1, pts2=pts2, cam_mat1=p1, cam_mat2=p2)  # (3,n)
