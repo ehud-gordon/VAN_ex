@@ -99,6 +99,7 @@ def ex1_main():
     utils.vis_triangulation(img1=img1, points_3d=my_3d,  pts1=pts1, title="mine")
 
 if __name__=="__main__":
+    # ex1_main()
     img1, img2 = utils.read_images(idx=0)
     kp1, desc1 = kp_desc(img=img1, to_plot=False)
     kp2, desc2 = kp_desc(img=img2, to_plot=False)
@@ -115,6 +116,3 @@ if __name__=="__main__":
     my_3d = triangulate(pts1=pts1, pts2=pts2, cam_mat1=p1, cam_mat2=p2)  # (3,n)
 
     print('end')
-
-
-
