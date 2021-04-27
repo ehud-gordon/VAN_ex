@@ -73,8 +73,10 @@ def triangulate(pts1, pts2, cam_mat1, cam_mat2):
 
 def ex1_main():
     img1, img2 = utils.read_images(idx=0)
+    # get keypoints + descriptors
     kp1, desc1 = kp_desc(img=img1, to_plot=True)
     kp2, desc2 = kp_desc(img=img2, to_plot=True)
+    # match descriptors, filter based on sig + stereo
     knn_matches = match_desc(desc1=desc1, desc2=desc2)
     utils.vis_matches(img1, img2, kp1, kp2, knn_matches)
 
