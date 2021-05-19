@@ -1,0 +1,15 @@
+we have an image
+|------------(x=1226)
+|
+|
+|
+(y=370)
+
+we reference the bottom-left corner with img[370,0]
+
+* keypoint.pt = [x,y]
+
+* cv2.triangulatePoints(projPoints1 = (2,n) of format (x,y), i.e keypoint.pt)
+
+* when we want to reference an image point, we do img[y,x]
+
