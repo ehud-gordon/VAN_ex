@@ -2,7 +2,7 @@ import numpy as np
 
 import os
 import pickle
-from time import gmtime, strftime
+import my_code.utils as utils
 TRACKS_PATH = r'C:\Users\godin\Documents\VAN_ex\tracks'
 
 class Tracks:
@@ -61,8 +61,7 @@ class Tracks:
         d['kp_l0']=self.kp_l0
         d['kp_r0'] = self.kp_r0
         d['first_frame_ind'] = self.first_frame_ind
-        datetime = strftime("%d_%m_%H_%M", gmtime())
-        path = os.path.join(TRACKS_PATH,datetime+'.pickle')
+        path = os.path.join(TRACKS_PATH,utils.get_time_path()+'.pickle')
         with open(path, 'wb') as handle:
             pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
 

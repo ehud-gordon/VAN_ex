@@ -51,27 +51,42 @@ class PNP:
         ext_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) FROM WORLD (l0) TO CAMERA (l1)
         return ext_l1
 
-    def pnp_ransac(self, iters=100):
+    def pnp_ransac(self):
+        eps = 0.99 # initial percent of outliers
+        s=4 # number of points to estiamte
+        p=0.999 # probability we want to get a subset of all inliers
+        iters_to_do = np.log(1-p) / np.log(1-(1-eps)**s)
+        iters_done = 0
+
         best_ext_l1 = None
         best_ext_l1_inliers_bool = np.zeros(1)
+        largest_inlier_ind = 0
         best_dists_l1 = None
-        for i in range(iters):
+
+        while iters_done <= iters_to_do:
             ext_l1 = self.pnp()
             if ext_l1 is None: continue
             inliers_bool, dists_l1 = self.inliers(ext_l1=ext_l1)
+            inlier_per = sum(inliers_bool) / self.kp_l1.shape[1]
+            eps = min(eps,1-inlier_per) # get upper bound on percent of outliers
+            iters_done +=1
+            iters_to_do = np.log(1-p) / np.log(1-(1-eps)**s) # recompute required number of iterations
             if sum(inliers_bool) >= sum(best_ext_l1_inliers_bool):
+                largest_inlier_ind = iters_done
                 best_ext_l1 = ext_l1
                 best_ext_l1_inliers_bool = inliers_bool
                 best_dists_l1 = dists_l1
-
+        # print(f"number of pnp ransac done {iters_done}, largest inlier at {largest_inlier_ind}, with {sum(best_ext_l1_inliers_bool)} inliers")
         # refine ext_l1 by computing it from all its inlier
         inlier_pc_l0 = self.pc_l0_r0[:, best_ext_l1_inliers_bool]
         inlier_kp_l1 = self.kp_l1[:, best_ext_l1_inliers_bool]
 
         # refine ext_l1 by computing pnp from all its inliers
         try:
-            tmp_pc_l0, tmp_pxls_l1 = get_pc_pxls_for_cv_pnp(pc_l0_r0=inlier_pc_l0, pxls_l1=inlier_kp_l1, size=inlier_pc_l0.shape[1])
-            retval, rvec, tvec = cv2.solvePnP(objectPoints=tmp_pc_l0, imagePoints=tmp_pxls_l1, cameraMatrix=self.k3, distCoeffs=None)
+            tmp_pc_l0, tmp_pxls_l1 = get_pc_pxls_for_cv_pnp(pc_l0_r0=inlier_pc_l0, pxls_l1=inlier_kp_l1,
+                                                            size=inlier_pc_l0.shape[1])
+            retval, rvec, tvec = cv2.solvePnP(objectPoints=tmp_pc_l0, imagePoints=tmp_pxls_l1, cameraMatrix=self.k3,
+                                              distCoeffs=None)
             best_ext_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) FROM WORLD (l0) TO CAMERA (l1)
         except:
             print("failure in refine best_ext_l1")
@@ -80,6 +95,7 @@ class PNP:
         self.best_ext_l1 = best_ext_l1
         self.best_ext_l1_inliers_bool = best_ext_l1_inliers_bool
         return best_ext_l1, best_ext_l1_inliers_bool
+
 
     def inliers(self, ext_l1):
         """
