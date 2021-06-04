@@ -2,44 +2,59 @@ import numpy as np
 
 import os
 import pickle
-import my_code.utils as utils
+import utils
 TRACKS_PATH = r'C:\Users\godin\Documents\VAN_ex\tracks'
-
+MAX_TRCK_PER_IMG = 1024
 class Tracks:
-    def __init__(self, kp_l0, kp_r0,first_frame_ind=0, td=None):
-        self.first_frame_ind = first_frame_ind
+    def __init__(self, endframe, td=None, ext_l1s=None):
+        self.endframe = endframe
         if td is None:
-            self.td = dict()
-            self.td[first_frame_ind] = dict()
+            self.td = dict() # tracks dict
+            self.td[0] = dict()
         else:
             self.td = td
-        self.kp_l0 = kp_l0.astype(int)
-        self.kp_r0 = kp_r0.astype(int)
+        if ext_l1s is None:
+            ext_l1 = np.diag((1,1,1,1))
+            self.ext_l1s = [ext_l1]
+        else:
+            self.ext_l1s = ext_l1s # takes points in l_{i-1} and transforms them to l_i
 
-
-    def add_frame(self, matches_l0_l1, l1_idx, kp_l1, kp_r1):
+    def add_frame(self, matches_l0_l1, l1_idx, kp_l0, kp_r0, kp_l1, kp_r1, ext_l1, pc_l0_r0, pc_l1_r1):
+        kp_l0 = kp_l0.astype(int)
+        kp_r0 = kp_r0.astype(int)
+        self.ext_l1s.append(ext_l1)
         kp_l1 = kp_l1.astype(int); kp_r1 = kp_r1.astype(int)
         l0_idx = l1_idx-1
         self.td[l1_idx] = dict()
         for m in matches_l0_l1:
             l0_m_idx = m.queryIdx
             l1_m_idx = m.trainIdx
+            pc_l0 = pc_l0_r0[:, l0_m_idx]
+            pc_l1 = pc_l1_r1[:, l1_m_idx]
             # add all matches to l1
-            if l0_m_idx in self.td[l0_idx]:
-                track_id = self.td[l0_idx][l0_m_idx][0]
-                track_length = self.td[l0_idx][l0_m_idx][3]
-                self.td[l1_idx][l1_m_idx]= [track_id, tuple(kp_l1[:,l1_m_idx]), tuple(kp_r1[:,l1_m_idx]), track_length+1]
-            else:
-                track_id = (l0_idx, l0_m_idx)
-                self.td[l0_idx][l0_m_idx] = [track_id, tuple(self.kp_l0[:,l0_m_idx]), tuple(self.kp_r0[:, l0_m_idx]),1]
-                self.td[l1_idx][l1_m_idx] = [track_id, tuple(kp_l1[:, l1_m_idx]), tuple(kp_r1[:, l1_m_idx]),2]
+            if l0_m_idx in self.td[l0_idx]: # re-use existing track
+                prev_track = self.td[l0_idx][l0_m_idx]
+                track_id = prev_track[0]
+                track_length = prev_track[3]
+                #                               0           1                            2                      3           4
+                self.td[l1_idx][l1_m_idx]= [track_id, tuple(kp_l1[:,l1_m_idx]), tuple(kp_r1[:,l1_m_idx]), track_length+1, pc_l1]
+            else: # create new track
+                track_id = (l0_idx << 10) + l0_m_idx # 1025 = 1<<10 + 1
+                self.td[l0_idx][l0_m_idx] = [track_id, tuple(kp_l0[:,l0_m_idx]), tuple(kp_r0[:, l0_m_idx]),1, pc_l0]
+                self.td[l1_idx][l1_m_idx] = [track_id, tuple(kp_l1[:, l1_m_idx]), tuple(kp_r1[:, l1_m_idx]),2, pc_l1]
         self.kp_l0 = kp_l1
         self.kp_r0 = kp_r1
 
 
     def get_track_ids(self, camera_id):
         try:
-            return [l[0] for l in self.td[camera_id].values()] # list of lists
+            return {l[0]%MAX_TRCK_PER_IMG for l in self.td[camera_id].values()} # set of ints
+        except KeyError:
+            return None
+
+    def get_tracks(self, camera_id):
+        try:
+            return list(self.td[camera_id].values())  # list of tuples
         except KeyError:
             return None
 
@@ -58,14 +73,15 @@ class Tracks:
     def serialize(self):
         d = dict()
         d['td'] = self.td
-        d['kp_l0']=self.kp_l0
-        d['kp_r0'] = self.kp_r0
-        d['first_frame_ind'] = self.first_frame_ind
-        path = os.path.join(TRACKS_PATH,utils.get_time_path()+'.pickle')
+        d['endframe'] = self.endframe
+        d['ext_l1s'] = self.ext_l1s
+        path = os.path.join(utils.track_path(),utils.get_time_path()+f'_{self.endframe}.pickle')
         with open(path, 'wb') as handle:
             pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 def read(path):
         with open(path, 'rb') as handle:
             d = pickle.load(handle)
-        return Tracks(kp_l0=d['kp_l0'],kp_r0=d['kp_r0'], first_frame_ind=d['first_frame_ind'], td=d['td'])
+        tracks_db = Tracks(td=d['td'], ext_l1s=d['ext_l1s'],
+                      endframe=d['endframe'])
+        return tracks_db

@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 import kitti
-import my_code.utils as utils
+import utils
 import matplotlib.pyplot as plt
 from matplotlib.patches import ConnectionPatch
 
@@ -19,7 +19,7 @@ class PNP:
         """
         :param matches_l0_l1: [DMatch1,...,] between queryIdx in pc_l0 and trainIdx in kp_l1/r1
         :param kp_l0: (2,n) of x-y pixels of kp
-        :param pc_l0_r0: point cloud, (3,n) matrix, in l0 coordiates, filtered by matches from original pc_l0_r0
+        :param pc_l0_r0: point cloud, (3,n) matrix, in l0 coordinates, filtered by matches from original pc_l0_r0
         :return:
         """
         query_inds = [m.queryIdx for m in matches_l0_l1]
@@ -34,7 +34,7 @@ class PNP:
     def set(self, kp_l1, pc_l0_r0, kp_r1):
         """
         :param kp_l1/r1: (2,n) of x-y pixels of kp in l1/r1 that're 4-matched
-        :param pc_l0_r0: point cloud, (3,n) matrix, in l0 coordiates, filtered by matches from original pc_l0_r0
+        :param pc_l0_r0: point cloud, (3,n) matrix, in l0 coordinates, filtered by matches from original pc_l0_r0
         :return:
         """
         assert kp_l1.shape[1] ==  kp_r1.shape[1] == pc_l0_r0.shape[1]
@@ -53,7 +53,7 @@ class PNP:
 
     def pnp_ransac(self):
         eps = 0.99 # initial percent of outliers
-        s=4 # number of points to estiamte
+        s=4 # number of points to estimate
         p=0.999 # probability we want to get a subset of all inliers
         iters_to_do = np.log(1-p) / np.log(1-(1-eps)**s)
         iters_done = 0
@@ -164,12 +164,12 @@ def plot_inliers_outliers_of_ext1(idx_of_l0, filt_kp_l0, filt_kp_l1, ext_l1_inli
         img_l1 = cv2.circle(img_l1, center=tuple(px), radius=4, color=color, thickness=1)
     utils.cv_disp_img(img_l1, title=f"l1 {idx_of_l0+1} inlier (green),outlier (blue) of best ext_l1 ", save=False)
 
-def draw_inliers_double(l0_idx, kp1, kp2, inliers, size,save=False):
+def draw_inliers_double(l0_idx, kp1, kp2, inliers, best_dists_l1, size,save=False):
     """  :param kp1/2: (2,n)
     :param inliers: bool array of size (n) """
     img_l0, img_r0 = kitti.read_images(idx=l0_idx, color_mode=cv2.IMREAD_COLOR)
     img_l1, img_r1 = kitti.read_images(idx=l0_idx + 1, color_mode=cv2.IMREAD_COLOR)
-    dists_l1 = pnp.best_dists_l1
+    dists_l1 = best_dists_l1
     fig, (ax1, ax2) = plt.subplots(1, 2)
     plt.suptitle(f"l{l0_idx}-l{l0_idx+1}, {sum(inliers)} inliers / {inliers.size} matches")
     ax1.imshow(img_l0); ax1.axis('off')
@@ -191,6 +191,6 @@ def draw_inliers_double(l0_idx, kp1, kp2, inliers, size,save=False):
     fig.subplots_adjust(left=0.01, bottom=0.19, right=0.99, top=0.94, wspace=0.01, hspace=0.2)
     print(f'---- end l{l0_idx}-l{l0_idx+1} ------- ')
     if save:
-        path = os.path.join(utils.FIG_PATH, 'tmp', f'{l0_idx}_{l0_idx + 1}' + '.png'); path = utils.get_avail_path(path)
+        path = os.path.join(utils.fig_path(), 'tmp', f'{l0_idx}_{l0_idx + 1}' + '.png'); path = utils.get_avail_path(path)
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.show()

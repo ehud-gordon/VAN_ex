@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import ConnectionPatch
 import scipy.spatial
 
-import my_code.utils as utils
+import utils
 from utils import CYAN_COLOR, ORANGE_COLOR
 import kitti
 
@@ -80,7 +80,7 @@ class Features:
             kp, desc = AKAZE.detectAndCompute(img, None)
 
         if self.det == "SIFT" and self.desc == "SIFT":
-            sift = cv2.SIFT_create(contrastThreshold=0.04, edgeThreshold=10) # nfeatures=0
+            sift = cv2.SIFT_create(contrastThreshold=0.05, edgeThreshold=9) # nfeatures=0
             # sift = cv2.SIFT_create(contrastThreshold=0.03, edgeThreshold=12)  # nfeatures=0
             kp, desc = sift.detectAndCompute(img,None)
 
@@ -102,10 +102,6 @@ class Features:
         knn_matches = self.matcher.knnMatch(desc1, desc2, k=2) # [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
         return knn_matches
 
-# TODO implement GridAdatperFeatureDetector, that for each box detects more points (lower thresholds)
-# TODO and then chooses from each tile only the n points with the highest score
-# TODO choose feature detector with (1) non maximal suppresion (2) feature score
-# TODO ask should we use LOWE's significance test? Answer no
 
     def get_kps_desc_stereo_pair(self, idx):
         img_l0, img_r0 = kitti.read_images(idx=idx)
@@ -120,7 +116,7 @@ class Features:
             kp1, desc1 = self.kp_desc(img=img1, plot_keypoints=self.plot_keypoints)  # (2,n1), ndarray (n1,32)
             kp2, desc2 = self.kp_desc(img=img2, plot_keypoints=self.plot_keypoints)  # (2,n2), ndarray (n2,32)
         knn_matches = self.match_desc_knn(desc1=desc1, desc2=desc2)  # list of N1 lists [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
-        matches,distant_kp1, distant_kp2 = filter_knn_matches(knn_matches=knn_matches, kp1=kp1, kp2=kp2, stereo_filter=stereo_filter)
+        matches = filter_knn_matches(knn_matches=knn_matches, kp1=kp1, kp2=kp2, stereo_filter=stereo_filter)
         # a = DrawMatchesDouble(img1=img1, img2=img2, kp1=distant_kp1, kp2=distant_kp2)
         # a.draw_matches_double(size=0, save=False, matcher_name=f'distant_matches__grid={self.feature_grid}_{self.matcher_type}_{self.det}_{self.desc}')
 
@@ -184,15 +180,15 @@ def filter_knn_matches(knn_matches, kp1, kp2, stereo_filter):
             if stereo_filter and (y_dist > utils.MATCH_Y_DIST_MAX):
                 continue
             # hst.append(m1.distance)
-            if m1.distance >= 200:
+            if m1.distance >= 160:
                 continue
-            if m1.distance >=150:
-                distant_kp1.append(m1.queryIdx)
-                distant_kp2.append(m1.trainIdx)
+            # if m1.distance >=150:
+            #     distant_kp1.append(m1.queryIdx)
+            #     distant_kp2.append(m1.trainIdx)
             good_matches.append(m1)
     # plt.hist(hst, density=True);plt.show()
-    distant_kp1 = kp1[:,distant_kp1]; distant_kp2 = kp2[:,distant_kp2]
-    return good_matches, distant_kp1, distant_kp2
+    # distant_kp1 = kp1[:,distant_kp1]; distant_kp2 = kp2[:,distant_kp2]
+    return good_matches
 
 def image_to_grid(img):
     """
@@ -282,7 +278,7 @@ class DrawMatchesDouble:
         self.ax2.imshow(self.img2); self.ax2.axis('off')
         inds = range(self.kp1.shape[1])
         if size:
-            inds = np.random.choice(kp1.shape[1], size=size, replace=False)
+            inds = np.random.choice(self.kp1.shape[1], size=size, replace=False)
         for i in inds:
             xy1 = self.kp1[:, i]
             xy2 = self.kp2[:, i]
@@ -295,23 +291,20 @@ class DrawMatchesDouble:
         self.curr_cons = self.cons
         self.fig.subplots_adjust(left=0.01, bottom=0.19, right=0.99, top=0.94, wspace=0.01, hspace=0.2)
         if save:
-            path = os.path.join(utils.FIG_PATH, 'tmp', f'matches_{matcher_name}' + '.png')
+            path = os.path.join(utils.fig_path(), 'tmp', f'matches_{matcher_name}' + '.png')
             plt.savefig(path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
-
-
-
-if __name__=="__main__":
-    kp1 = np.array([
-        [23.85, 163, 166, 171.3, 175.3, 188.8, 209.3, 229.1, 238, 238.7, 246.2, 274.4, 278.4, 302.5, 313.9, 316.8, 332.2, 351, 385.2, 403.5, 405.6, 466.3, 599.3, 663.6, 675.2, 1111, 1123, 1129],
-        [116.3, 203, 214.5, 159.6, 220.8, 159.6, 199.9, 147.8, 152.3, 180.5, 145.9, 142, 180.5, 196.1, 133.2, 143.7, 153.3, 142.7, 122, 145.7, 154, 201.3, 155.9, 145.6, 144.5, 48.62, 47.85, 47.64]])
-    kp2 = np.array([
-       [10.04, 145.5, 148.3, 159.9, 156.6, 176.6, 189.9, 212.7, 221.4, 228.9, 230.6, 258.5, 269.4, 288.9, 299.4, 301.1, 315.7, 335.1, 371.1, 390.3, 394.2, 455.3, 597, 657.1, 667.2, 1097, 1092, 1097],
-       [116.8, 203, 213.6, 159.9, 220.5, 159.4, 200.6, 148, 152, 180.9, 146.1, 142.1, 180.3, 197, 132.6, 143.6, 153.4, 143.1, 122, 144.2, 154.1, 201.4, 155.5, 145.3, 144, 46.95, 47.43, 46.95]])
-    img1, img2 = kitti.read_images(idx=0)
-    a = DrawMatchesDouble(img1, img2, kp1, kp2)
-    a.draw_matches_double(size=0)
+# if __name__=="__main__":
+#     kp1 = np.array([
+#         [23.85, 163, 166, 171.3, 175.3, 188.8, 209.3, 229.1, 238, 238.7, 246.2, 274.4, 278.4, 302.5, 313.9, 316.8, 332.2, 351, 385.2, 403.5, 405.6, 466.3, 599.3, 663.6, 675.2, 1111, 1123, 1129],
+#         [116.3, 203, 214.5, 159.6, 220.8, 159.6, 199.9, 147.8, 152.3, 180.5, 145.9, 142, 180.5, 196.1, 133.2, 143.7, 153.3, 142.7, 122, 145.7, 154, 201.3, 155.9, 145.6, 144.5, 48.62, 47.85, 47.64]])
+#     kp2 = np.array([
+#        [10.04, 145.5, 148.3, 159.9, 156.6, 176.6, 189.9, 212.7, 221.4, 228.9, 230.6, 258.5, 269.4, 288.9, 299.4, 301.1, 315.7, 335.1, 371.1, 390.3, 394.2, 455.3, 597, 657.1, 667.2, 1097, 1092, 1097],
+#        [116.8, 203, 213.6, 159.9, 220.5, 159.4, 200.6, 148, 152, 180.9, 146.1, 142.1, 180.3, 197, 132.6, 143.6, 153.4, 143.1, 122, 144.2, 154.1, 201.4, 155.5, 145.3, 144, 46.95, 47.43, 46.95]])
+#     img1, img2 = kitti.read_images(idx=0)
+#     a = DrawMatchesDouble(img1, img2, kp1, kp2)
+#     a.draw_matches_double(size=0)
 
 def plot_inliers_outliers_keypoints(all_matches, inliers, kp1, kp2, img1, img2):
     outliers = [match for match in all_matches if match not in inliers]
@@ -367,7 +360,7 @@ def vis_y_dist_matches_cv(img1, img2, KeyPoints1, KeyPoints2, matches,save=False
     plt.title(f"hist of y-dist of matches,"
               f" {sum(y_dists>2)}/{len(matches)}={sum(y_dists>2)/len(matches):.1%} > 2")
     plt.ylabel("number of matches"); plt.xlabel("match's distance in y-axis")
-    hist_path = utils.get_avail_path(os.path.join(utils.FIG_PATH, "matches_hist.png"))
+    hist_path = utils.get_avail_path(os.path.join(utils.fig_path(), "matches_hist.png"))
     if save:
         plt.savefig(hist_path)
     plt.show()
