@@ -80,7 +80,7 @@ class Features:
             kp, desc = AKAZE.detectAndCompute(img, None)
 
         if self.det == "SIFT" and self.desc == "SIFT":
-            sift = cv2.SIFT_create(contrastThreshold=0.05, edgeThreshold=9) # nfeatures=0
+            sift = cv2.SIFT_create(contrastThreshold=0.04, edgeThreshold=10) # nfeatures=0
             # sift = cv2.SIFT_create(contrastThreshold=0.03, edgeThreshold=12)  # nfeatures=0
             kp, desc = sift.detectAndCompute(img,None)
 
@@ -180,7 +180,7 @@ def filter_knn_matches(knn_matches, kp1, kp2, stereo_filter):
             if stereo_filter and (y_dist > utils.MATCH_Y_DIST_MAX):
                 continue
             # hst.append(m1.distance)
-            if m1.distance >= 160:
+            if m1.distance >= 200:
                 continue
             # if m1.distance >=150:
             #     distant_kp1.append(m1.queryIdx)

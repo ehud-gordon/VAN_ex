@@ -52,7 +52,7 @@ def triang(kp1, kp2, k, m1, m2):
     p2 = k @ m2  # (3,4)
 
     pc_4d = cv2.triangulatePoints(projMatr1=p1, projMatr2=p2, projPoints1=kp1, projPoints2=kp2)  # (4,n)
-    pc_3d = pc_4d[:-1] / (pc_4d[-1].reshape(1, -1))  # (3,n)
+    pc_3d = pc_4d[0:3] / pc_4d[-1]  # (3,n)
     return pc_3d
 
 def triang_from_keypoints(kp1, kp2, k, m1, m2):

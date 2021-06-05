@@ -67,7 +67,7 @@ def read_poses_orig(idx, dataset_path=None):
     :param idx: list of lines to take
     :return: list of extrinsics matrices [ndarray(4,4), ..., ndarray(4,4)]
     """
-    if idx: idx.sort()
+    assert sorted(idx) == idx
     matrices = []
     if dataset_path is None:
         dataset_path = data_path()
@@ -91,10 +91,19 @@ def read_poses_orig(idx, dataset_path=None):
                         return matrices
     return matrices
 
+def read_dws(idx, dataset_path=None):
+    """ returns dws from kitti original matries
+    :param idx: list of lines to take of size n
+    :return: ndarray (3,n)
+    """
+    matrices = read_poses_orig(idx=idx, dataset_path=dataset_path)
+    dws = []
+    for m in matrices:
+        dws.append(m[0:3,-1])
+    return np.array(dws).T
+
 def read_poses_world_to_cam(idx, dataset_path=None):
-    if dataset_path is None:
-        dataset_path = data_path()
-    matrices = read_poses_orig(idx, dataset_path)
+    matrices = read_poses_orig(idx=idx, dataset_path=dataset_path)
     matrices = [utils.inv_extrinsics(m) for m in matrices]
     return matrices
 
@@ -109,6 +118,17 @@ def read_relative_poses_world_to_cam(idx, dataset_path=None):
     return utils.get_l0_to_l1_trans_rot(l0=l0, l1=l1)
 
 
+def read_trans_vectors(idx, dataset_path=None):
+    """ returns translation vectors from (WORLD-TO-CAM) kitti matries
+    :param idx: list of lines to take of size n
+    :return: ndarray (3,n)
+    """
+    matrices = read_poses_world_to_cam(idx=idx, dataset_path=dataset_path)
+    trans_vecs = []
+    for m in matrices:
+        trans_vecs.append(m[0:3,-1])
+    return np.array(trans_vecs).T
+
 def get_images_path_from_dataset_path(dataset_path):
     base = os.path.basename(dataset_path) # dataset05
     seq_num = re.search(r"[0-9]+", base).group(0) # 05
@@ -120,3 +140,11 @@ def get_poses_path_from_dataset_path(dataset_path):
     seq_num = str(re.search(r"[0-9]+", base).group(0)) # 05
     poses_path = os.path.join(dataset_path, 'poses', seq_num+'.txt')
     return poses_path
+
+# if __name__=="__main__":
+#     np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+#     idx = [0,1,2,3]
+#     dws = read_dws(idx=idx)
+#     trans_vecs = read_trans_vectors(idx)
+#
+#     z=3
