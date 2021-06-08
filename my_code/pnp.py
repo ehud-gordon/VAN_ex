@@ -83,10 +83,8 @@ class PNP:
 
         # refine ext_l1 by computing pnp from all its inliers
         try:
-            tmp_pc_l0, tmp_pxls_l1 = get_pc_pxls_for_cv_pnp(pc_l0_r0=inlier_pc_l0, pxls_l1=inlier_kp_l1,
-                                                            size=inlier_pc_l0.shape[1])
-            retval, rvec, tvec = cv2.solvePnP(objectPoints=tmp_pc_l0, imagePoints=tmp_pxls_l1, cameraMatrix=self.k3,
-                                              distCoeffs=None)
+            tmp_pc_l0, tmp_pxls_l1 = get_pc_pxls_for_cv_pnp(pc_l0_r0=inlier_pc_l0, pxls_l1=inlier_kp_l1, size=inlier_pc_l0.shape[1])
+            retval, rvec, tvec = cv2.solvePnP(objectPoints=tmp_pc_l0, imagePoints=tmp_pxls_l1, cameraMatrix=self.k3, distCoeffs=None)
             best_ext_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) FROM WORLD (l0) TO CAMERA (l1)
         except:
             print("failure in refine best_ext_l1")

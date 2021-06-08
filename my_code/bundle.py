@@ -13,8 +13,12 @@ import utils
 import kitti
 import triang
 
-
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+
+# TODO add prev_cam_idx and prev_match_idx to tracks
+# TODO if track only in frames 9,10 don't add it to bundle of frames [10-20]
+# TODO 
+
 
 def get_world_to_cam_trans_vecs_from_values(values):
     cameras_keys = gtsam.utilities.allPose3s(values)
@@ -53,8 +57,8 @@ def plot_2d_cams(camera_dws, plot_dir, endframe, startframe=0):
     plt.figure()
     plt.scatter(x=camera_dws[0], y=camera_dws[2], marker=(5,2), color="red")
     plt.xlabel('x');plt.ylabel('z')
-    plt.title(f"2D camera's locations for frames [{startframe}-{endframe-1}]")
-    path = os.path.join(plot_dir, f'2d_cams_{startframe}_{endframe-1}' + '.png')
+    plt.title(f"2D camera's locations for keyframes in [{startframe}-{endframe}]")
+    path = os.path.join(plot_dir, f'2d_cams_{startframe}_{endframe}' + '.png')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
 
 def plot_2d_cams_compare(truth_dws, my_dws, plot_dir, endframe, startframe=0):
@@ -62,9 +66,9 @@ def plot_2d_cams_compare(truth_dws, my_dws, plot_dir, endframe, startframe=0):
     plt.scatter(x=my_dws[0], y=my_dws[2], color="blue", label="mine")
     plt.scatter(x=truth_dws[0], y=truth_dws[2], color="red", label="truth")
     plt.xlabel('x');plt.ylabel('z')
-    plt.title(f"2D camera's locations comparison for frames [{startframe}-{endframe-1}]")
+    plt.title(f"2D camera's locations comparison for keyframes in [{startframe}-{endframe}]")
     plt.legend()
-    path = os.path.join(plot_dir, f'2d_cams_comp_{startframe}_{endframe-1}' + '.png')
+    path = os.path.join(plot_dir, f'2d_cams_comp_{startframe}_{endframe}' + '.png')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
 
 def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe=0):
@@ -74,36 +78,39 @@ def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe
     plt.scatter(x=dws[0], y=dws[2], color="red", marker=(5,2), label="camera")
     plt.scatter(x=landmarks[0], y=landmarks[2], color="blue", label="landmark", alpha=0.2)
     plt.xlabel('x');plt.ylabel('z')
-    plt.title(f"2D cameras and landmarks for frames [{startframe}-{endframe-1}]")
+    plt.title(f"2D cameras and landmarks for keyframes [{startframe}-{endframe}]")
     plt.legend()
-    path = os.path.join(plot_dir, f'2d_cams_points_{startframe}_{endframe-1}' + '.png')
+    path = os.path.join(plot_dir, f'2d_cams_points_{startframe}_{endframe}' + '.png')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
 
-def plot_vecs_diff(my_vecs, truth_vecs, idx, plot_dir, title):
-    diff = (my_vecs - truth_vecs)**2
-    diff_sum = np.sqrt(np.sum(diff, axis=0))
+def plot_trans_vecs_diff(my_vecs, truth_vecs, idx, plot_dir, title):
+    diff = np.abs(my_vecs - truth_vecs)
     fig = plt.figure()
-    plt.scatter(idx, diff_sum)
-    plt.plot(idx, diff_sum)
-    plt.ylabel("L2 Norm"); plt.xlabel("frames")
-    plt.title (f"L2 Norm between my and truth {title} vectors, frames [{idx[0]}-{idx[-1]}]")
-    plt.savefig(os.path.join(plot_dir, f'{title}_vecs_diff_{idx[0]}_{idx[-1]}.png'))
+    plt.plot(idx, diff[0], label="tx")
+    plt.plot(idx, diff[1], label="ty")
+    plt.plot(idx, diff[2], label="tz")
+    plt.ylabel("Diff"); plt.xlabel("frames")
+    plt.title (f"Difference  between my and truth translation vectors, keyframes in [{idx[0]}-{idx[-1]}]")
+    plt.legend()
+    plt.savefig(os.path.join(plot_dir, f'trans_vecs_diff_{idx[0]}_{idx[-1]}.png'))
 
 
 class FactorGraphSLAM:
     def __init__(self, tracks_path):
         self.tracks_path = tracks_path
         self.tracks_db = tracks.read(tracks_path)
+        self.kitti = self.tracks_db.args.kitti
         self.endframe = self.tracks_db.endframe # 2760
         self.bundle_len = 11 # number of frames in bundle
         self.k, self.ext_l0, self.ext_r0 = kitti.read_cameras() # k=(3,4) ext_l0/r0 (4,4)
         fx, skew, cx, _, fy, cy = self.k[0:2, 0:3].flatten()
         baseline = self.ext_r0[0, 3]
         self.gt_k = gtsam.Cal3_S2Stereo(fx, fy, skew, cx, cy, -baseline)
-        self.plot_dir = os.path.join(utils.fig_path(), utils.get_time_path()+f'_{self.endframe}')
+        self.plot_dir = os.path.join(utils.fig_path(), utils.get_time_path())
+        self.plot_dir += ('_kitti' if self.kitti else '_mine') + f'_{self.endframe}'
         self.keyframes_idx = list(range(0, self.endframe+1, self.bundle_len-1))
-        os.makedirs(self.plot_dir)
-        stats = [self.tracks_path]
+        utils.make_dir(self.plot_dir)
+        stats = ["tracks_db args:", str(self.tracks_db.args), self.tracks_path]
         with open (os.path.join(self.plot_dir,'stats.txt'), 'w') as f:
             f.writelines('\n'.join(stats))
         
@@ -118,40 +125,43 @@ class FactorGraphSLAM:
             endframe = min(l0_idx+self.bundle_len, self.endframe+1)
             if endframe > self.endframe+1:
                 break
-            lk_to_l0_MY = self.factorize(l0_idx=l0_idx)
-            lk_to_l0_pose = kitti.read_poses_orig([endframe-1])[0]
-            l0_to_lk_pose = kitti.read_poses_world_to_cam([endframe-1])[0]
-            Pose3_keyframes.insert(X(endframe-1), lk_to_l0_MY)
+            lk_to_l0_mine = self.factorize(l0_idx=l0_idx)
+            lk_to_l0_kitti = kitti.read_poses_orig([endframe-1])[0]
+            l0_to_lk_kitti = kitti.read_poses_world_to_cam([endframe-1])[0]
+            Pose3_keyframes.insert(X(endframe-1), lk_to_l0_mine)
             print(f'finished frames [{l0_idx}-{endframe-1}]')
+        
         #### plots ####
         # plot 2D camera locations (regular and comparison)
         kitti_dws = kitti.read_dws(idx=self.keyframes_idx) # (3,6)
         my_dws = get_dws_from_gtsam_values(Pose3_keyframes) # (3,6)
-        plot_2d_cams(camera_dws=my_dws, plot_dir=self.plot_dir, startframe=0, endframe=self.endframe+1)
-        plot_2d_cams_compare(truth_dws=kitti_dws, my_dws=my_dws, plot_dir=self.plot_dir, endframe=self.endframe+1)
+        plot_2d_cams(camera_dws=my_dws, plot_dir=self.plot_dir, startframe=0, endframe=self.endframe)
+        plot_2d_cams_compare(truth_dws=kitti_dws, my_dws=my_dws, plot_dir=self.plot_dir, endframe=self.endframe)
         # plot trans vecs diff
         kitti_trans_vecs = kitti.read_trans_vectors(idx=self.keyframes_idx)
         my_trans_vecs = get_world_to_cam_trans_vecs_from_values(values=Pose3_keyframes)
-        plot_vecs_diff(my_vecs=my_trans_vecs, truth_vecs=kitti_trans_vecs, idx=self.keyframes_idx, plot_dir=self.plot_dir, title="trans")
+        plot_trans_vecs_diff(my_vecs=my_trans_vecs, truth_vecs=kitti_trans_vecs, idx=self.keyframes_idx, plot_dir=self.plot_dir, title="trans")
         # plot 3D Poses
         plot.plot_trajectory(self.endframe, Pose3_keyframes); plot.set_axes_equal(self.endframe)
         plt.savefig(os.path.join(self.plot_dir,f'3d_cams_0_{self.endframe}.png'))
 
 
     def factorize(self, l0_idx):
-        endframe = l0_idx + self.bundle_len # 10
+        endframe = l0_idx + self.bundle_len - 1 # 10
         graph = gtsam.NonlinearFactorGraph()
         initialEstimate = gtsam.Values()
-        pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.1, 0.1, 0.1]))
+        pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.01, 0.01, 0.01, 1.0, 1.0, 1.0]))
+        # pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.1, 0.1, 0.1]))
         meas_noise_model = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
 
         # add Initial Estimates for Camera
         # initialEstimate.insert(X(l0_idx), Pose3())
-        li_to_l0_s = kitti.read_poses_orig(list(range(l0_idx, endframe)))
-        #  lim_to_li_s = self.tracks_db.ext_l1s[l0_idx:endframe] # l_{i-1} to l_{i}
+        l0_to_li_s = self.tracks_db.ext_l1s[l0_idx:endframe+1]
+        li_to_l0_s = [utils.inv_extrinsics(ext_mat) for ext_mat in l0_to_li_s]
+        # kitti_li_to_l0_s = kitti.read_poses_orig(list(range(l0_idx, endframe+1)))
         # l0_to_li_s = [np.diag((1, 1, 1, 1))]
         # li_to_l0_s = [np.diag((1, 1, 1, 1))]
-        for i in range(l0_idx , endframe):
+        for i in range(l0_idx , endframe+1):
         #     l0_to_li = self.tracks_db.ext_l1s[i] @ l0_to_li_s[-1]
         #     l0_to_li_s.append(l0_to_li)
         #     li_to_l0 = utils.inv_extrinsics(l0_to_li)
@@ -166,16 +176,17 @@ class FactorGraphSLAM:
         
         # TODO should I add prior on some point like in https://github.com/borglab/gtsam/blob/develop/python/gtsam/tests/test_SFMExample.py#L50
         # Add factors for all measurements
-        for cam_idx in range(l0_idx, endframe):
+        for cam_idx in range(l0_idx, endframe+1):
             idx_tracks = self.tracks_db.get_tracks(cam_id=cam_idx)
             for track in idx_tracks:
                 # add factor for measurement
                 # [(1026), (30,87), (17,87), 1, array([-22,-3,27])]
-                orig_cam_idx = max(track.orig_cam_id, l0_idx)
-                if orig_cam_idx >= (endframe-1):
+                # if we're in endframe, and this track originated in the endframe
+                if track.orig_cam_id == endframe:
                     continue
+                orig_cam_idx = max(track.orig_cam_id, l0_idx)
                 stereo_point = StereoPoint2(track.left_x, track.right_x, track.left_y)
-                graph.add( GenericStereoFactor3D(stereo_point,meas_noise_model, X(cam_idx), P(track.id), self.gt_k) )
+                graph.add( GenericStereoFactor3D(stereo_point, meas_noise_model, X(cam_idx), P(track.id), self.gt_k) )
                 # if new point, add initial estimate
                 if orig_cam_idx == cam_idx:                    
                     pc_li = track.pc
@@ -186,25 +197,27 @@ class FactorGraphSLAM:
         # optimize
         optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
         values = optimizer.optimize()
-        pose_x_endframe = values.atPose3(X(endframe-1))
+        pose_x_endframe = values.atPose3(X(endframe))
         # plot 2D view cameras+points
         plot_2d_cams_points_from_gtsam_values(values=values, plot_dir=self.plot_dir, endframe=endframe, startframe=l0_idx)
         # plot 3D trajectory only cameras
         plot.plot_trajectory(l0_idx, values)
         plot.set_axes_equal(l0_idx)
-        plt.savefig(os.path.join(self.plot_dir, f'3d_cams_{l0_idx}_{endframe-1}'), bbox_inches='tight', pad_inches=0)
+        plt.savefig(os.path.join(self.plot_dir, f'3d_cams_{l0_idx}_{endframe}'), bbox_inches='tight', pad_inches=0)
 
         # plot 3D trajectory cameras+points
         plot.plot_trajectory(l0_idx+1, values)
         plot.plot_3d_points(l0_idx+1, values, linespec='r*')
         plot.set_axes_equal(l0_idx+1)
-        plt.savefig(os.path.join(self.plot_dir, f'3d_cams_points_{l0_idx}_{endframe-1}'), bbox_inches='tight', pad_inches=0)
+        plt.savefig(os.path.join(self.plot_dir, f'3d_cams_points_{l0_idx}_{endframe}'), bbox_inches='tight', pad_inches=0)
         plt.close('all')
         return pose_x_endframe
 
 
 if __name__=="__main__":
-    tracks_path = os.path.join(utils.track_path(), '06_05_16_49_2760_pose_global_filtered.pickle')
+    tracks_name = '06_08_19_06_mine_global_2760_filtered_2760.pickle'
+    # tracks_name = '06_08_18_36_mine_global_50_filtered_50.pickle'
+    tracks_path = os.path.join(utils.track_path(), tracks_name)
     ba = FactorGraphSLAM(tracks_path=tracks_path)
     ba.main()
     print('bundle end')

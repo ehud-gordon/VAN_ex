@@ -6,7 +6,16 @@ import os
 import numpy as np
 import utils
 
-def get_point_cloud_filter(pc):
+def get_quantile_point_cloud_filter(pc):
+    pc_abs = np.abs(pc)
+    x_quant, y_quant, z_quant = np.quantile(pc_abs, q=0.99, axis=1)
+    x_crit = (pc_abs[0] <= x_quant)
+    y_crit = (pc_abs[1] <= y_quant)
+    z_crit = (pc_abs[2] <= z_quant)
+    filtered = x_crit * y_crit * z_crit
+    return filtered
+
+def get_relative_point_cloud_filter(pc):
     """
     :param pc: (3,n)
     """
@@ -17,26 +26,10 @@ def get_point_cloud_filter(pc):
     z_crit2 = pc[2] > 1
     z_crit = z_crit1 * z_crit2
     filtered = (x_crit * y_crit) * z_crit
-    pc2 = pc[:,filtered]
-    x_abs2 = abs(pc2[0])
-    y_abs2 = abs(pc2[1])
-    z_abs2 = abs(pc2[2])
-    partx = np.argpartition(-x_abs2, 10)
-    party = np.argpartition(-y_abs2, 10)
-    partz = np.argpartition(-z_abs2, 10)
-    valx = x_abs2[partx]
-    valy = y_abs2[party]
-    valz = z_abs2[partz]
-
     return filtered
 
-def filter_point_cloud(pc):
-    pc_filter = get_point_cloud_filter(pc=pc)
-    pc = pc[:, pc_filter]
-    return pc
-
 def filter_based_on_triang(kp_l, desc_l, kp_r, pc):
-    filtered = get_point_cloud_filter(pc)
+    filtered = get_relative_point_cloud_filter(pc)
     return kp_l[:,filtered], desc_l[filtered], kp_r[:, filtered], pc[:,filtered]
 
 def triang(kp1, kp2, k, m1, m2):
@@ -69,7 +62,6 @@ def vis_pc(pc, title="", save=False,cameras=None):
     assert pc.shape[0] in [3,4]
     if pc.shape[0] == 4:
         pc = pc[:3] / pc[-1,:]
-    pc = filter_point_cloud(pc)
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
     ax.scatter(pc[0, :], pc[2, :], pc[1, :], color="blue") # this isn't a mistake, plt's z axis is our Y axis
@@ -94,10 +86,6 @@ def vis_triang(img, pc, pxls, title="", save=False):
         :param pxls: (2,num_of_matches) inhomogeneous """
     assert pc.shape[1] == pxls.shape[1]
     vis_pc(pc=pc,title=title, save=save)
-    pc_filter = get_point_cloud_filter(pc=pc)
-    pc = pc[:,pc_filter]
-    pxls = pxls[:,pc_filter]
-
     # plot pxls with txt indicating their 3d location
     img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     num_matches = pc.shape[1]
@@ -117,17 +105,9 @@ if __name__=="__main__":
     import kitti
     import features
     pc_3d = np.vstack((np.arange(11),np.arange(11),np.arange(11)))
-    vis_pc(pc=pc_3d, fignum=1,save=False)
+    vis_pc(pc=pc_3d, save=False)
     # fig0 = plt.figure(); plt.plot(np.arange(10),np.arange(10))
     fig1 = plt.figure(1); axes1 = fig1.gca()
     axes1.scatter(np.array(50),np.array(50),np.array(50))
     plt.show()
 
-    # idx =100
-    # img_l0, img_r0 = kitti.read_images(idx)
-    # args = Namespace(dataset_path='C:\\Users\\godin\\Documents\\VAN_ex\\data\\dataset05', desc='SIFT', det='SIFT', endframe=10, feature_grid=False, fig_path='C:\\Users\\godin\\Documents\\VAN_ex\\fig', matcher='FLANN', plot=True, save=True, store_tracks=True)
-    # featurez = features.Features(args)
-    # kp_l0, desc_l0, kp_r0 = featurez.get_kps_desc_stereo_pair(idx=idx)
-    # k, l0_ext, r0_ext = kitti.read_cameras()
-    # pc_3d = triang(kp1=kp_l0, kp2=kp_r0, k=k, m1=l0_ext, m2=r0_ext)
-    # vis_triang(img=img_l0,pc=pc_3d, pxls=kp_l0,title="a",save=False)

@@ -1,3 +1,5 @@
+import shutil
+
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
@@ -22,6 +24,11 @@ def dir_name_ext(path):
     dir, base = os.path.split(path)
     name, ext = os.path.splitext(base)
     return dir, name, ext
+
+def make_dir(path):
+    if os.path.isdir(path):
+        shutil.rmtree(path, ignore_errors=True)
+    os.makedirs(path)
 
 def get_avail_path(path):
     while os.path.exists(path):
@@ -78,7 +85,7 @@ def kp_to_np(kp):
     np_kp = np.array([keypoint.pt for keypoint in kp]).T # (2,n)
     return np_kp
 
-def rots_matrices_diff(R,Q):
+def rotation_matrices_diff(R,Q):
     rvec, _ = cv2.Rodrigues(R.transpose() @ Q)
     radian_diff = np.linalg.norm(rvec)
     deg_diff = radian_diff * 180 / np.pi

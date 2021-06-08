@@ -16,6 +16,7 @@ def parse_args():
     parser.add_argument("--plot", action="store_true", default=False)
     parser.add_argument("--save", action="store_true", default=False)
     parser.add_argument("--globaly", action="store_true", default=False)
+    parser.add_argument("--kitti", action="store_true", default=False)
 
     parser.add_argument("--det", type=str, choices=["SIFT", "SURF", "AKAZE"], default="SIFT",help="detector")
     parser.add_argument("--desc", type=str, choices=["SIFT", "SURF", "AKAZE",],default="SIFT", help="descriptor")
@@ -29,8 +30,6 @@ def parse_args():
     if not args.endframe:
         seq_length = kitti.get_seq_length(dataset_path=args.dataset_path) # 2761
         args.endframe = seq_length - 1 # 2760
-    # if args.endframe < 20:
-    #     args.save = False
 
     return args
 

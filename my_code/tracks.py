@@ -25,9 +25,9 @@ class Track:
 
 
 class Tracks_DB:
-    def __init__(self, endframe, td=None, ext_l1s=None):
-        self.endframe = endframe
-        self.bad_tracks_ids = set()
+    def __init__(self, args, td=None, ext_l1s=None):
+        self.args = args
+        self.endframe = args.endframe
         if td is None: # tracks dictionary
             self.td = dict() # tracks dict
             self.td[0] = dict()
@@ -87,11 +87,12 @@ class Tracks_DB:
     def serialize(self, title=""):
         d = dict()
         d['td'] = self.td
-        d['endframe'] = self.endframe
+        d['args'] = self.args
         d['ext_l1s'] = self.ext_l1s
         if not title:
             title=utils.get_time_path()
         path = os.path.join(utils.track_path(),f'{title}_{self.endframe}.pickle')
+        path = utils.get_avail_path(path)
         with open(path, 'wb') as handle:
             pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -107,5 +108,5 @@ def read(path):
         with open(path, 'rb') as handle:
             d = pickle.load(handle)
         tracks_db = Tracks_DB(td=d['td'], ext_l1s=d['ext_l1s'],
-                      endframe=d['endframe'])
+                      args=d['args'])
         return tracks_db

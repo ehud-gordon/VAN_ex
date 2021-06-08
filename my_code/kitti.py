@@ -113,9 +113,10 @@ def read_relative_poses_world_to_cam(idx, dataset_path=None):
     assert idx[0] >= 1
     if dataset_path is None:
         dataset_path = data_path()
-    matrices = read_poses_orig([idx[0]-1]+idx, dataset_path)
-    l0, l1 = [utils.inv_extrinsics(m) for m in matrices] # (4,4)
-    return utils.get_l0_to_l1_trans_rot(l0=l0, l1=l1)
+    idx = [idx[0]-1] + idx
+    l0, l1 = read_poses_world_to_cam(idx, dataset_path)
+    r0_to_r1, t0_to_t1 = utils.get_l0_to_l1_trans_rot(l0=l0, l1=l1)
+    return r0_to_r1, t0_to_t1
 
 
 def read_trans_vectors(idx, dataset_path=None):
