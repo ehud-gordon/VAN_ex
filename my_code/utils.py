@@ -133,11 +133,11 @@ def rot_trans_stats(rot_diffs_relative, trans_diffs_relative, endframe):
     trans_avg_error = trans_total_error / endframe
     stats = [f"sum of relative rotation errors over all {endframe} frames = {rots_total_error:.1f} deg",
              f"relative rotation error per frame =  {rots_total_error:.1f}/{endframe} = {rot_avg_error:.2f} deg",
-             f"avg. relative translation error = {trans_avg_error:.2f} meters",
-             f"total translation error = {trans_total_error:.1f} meters",
-             f"tx total error:{tx_error:.1f} meters",
-             f"ty total error:{ty_error:.1f} meters",
-             f"tz total error:{tz_error:.1f} meters"]
+             f"sum of relative translation errors over all {endframe} frames = {trans_total_error:.1f} deg",
+             f"relative translation error per frame =  {trans_total_error:.1f}/{endframe} = {trans_avg_error:.2f} deg",
+             f"sum of relative translation errors over all {endframe} frames, in x-coordinate {tx_error:.1f} meters",
+             f"sum of relative translation errors over all {endframe} frames, in y-coordinate {ty_error:.1f} meters",
+             f"sum of relative translation errors over all {endframe} frames, in z-coordinate {tz_error:.1f} meters"]
     return stats, rots_total_error,  trans_total_error
 
 def get_consistent_with_extrinsic(kp_li, kp_ri, pc_in_l0, ext_l0_li, ext_li_ri, k):

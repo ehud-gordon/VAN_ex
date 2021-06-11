@@ -1,0 +1,98 @@
+######## (1) Getting Keypoints and descriptors ########
+
+def get_keypoints_descriptors(img):
+    surf_feature2d = cv2.xfeatures2d_SURF.create(hessianThreshold=400)
+    keypoints, desc = surf_feature2d.detectAndCompute(img, None)
+    keypoints = np.array([keypoint.pt for keypoint in kp]).T # ndarray (2,n)
+    return keypoints, desc
+
+######## (2) Matching  ########
+
+def match(kp0, kp1, desc0, desc1, is_stereo):
+    matcher = cv2.BFMatcher(normType=cv2.NORM_L2, crossCheck=True)
+    matches = matcher.match(desc0, desc1)  # list of matches [DMatch1,... DMatch1N]
+    return filter_matches(matches, kp0, kp1, is_stereo)
+
+def filter_matches(matches, kp0, kp1, is_stereo):
+    good_matches = []
+    for m in matches:
+        y_dist = abs(kp0[1, m.queryIdx] - kp1[1, m.trainIdx])
+        if is_stereo and (y_dist > 2):
+            continue
+        if m.distance >= 200:
+            continue
+        good_matches.append(m)
+    return good_matches
+
+######## (3) Getting Keypoints for Stereo Pair ########
+
+def get_keypoints_for_stereo_pair(frame_idx):
+    # this returns keypoints after matching left and right
+
+    img_left, img_right = get_images(frame_idx)
+    kp_left, desc_left = get_keypoints_descriptors(img_left)  # ndarray (2,n1), ndarray (n1,32)
+    kp_right, desc_right = get_keypoints_descriptors(img_right)  # ndarray (2,n2), ndarray (n2,32)
+    matches = match(kp_left, kp_right, desc_left, desc_right, is_stereo=True)
+
+    # filtering keypoints and descriptors based on matches
+    query_ind = [m.queryIdx for m in matches]
+    train_ind = [m.trainIdx for m in matches]
+    filt_kp_left = kp_left[:, query_ind]
+    filt_desc_left = desc_left[query_ind]
+    filt_kp_right = kp_right[:, train_ind]
+    return filt_kp_left, filt_desc_left, filt_kp_right
+
+######## (4) Filtering Keypoints, descriptors with triangulation ########
+
+def get_filtered_keypoints_descriptors(frame_idx):
+    kp_left, desc_left, kp_right = get_keypoints_for_stereo_pair(frame_idx)
+    return simple_triangulation_filtering(kp_left, desc_left, kp_right)
+
+def simple_triangulation_filtering(kp_left, desc_left, kp_right):
+    k = np.array([[707.1, 0, 601.9, 0],
+                   [0, 707.1, 183.1, 0],
+                   [0, 0, 1, 0]])
+
+    proj_left = k @ np.array([[1, 0, 0, 0],
+                               [0, 1, 0, 0],
+                               [0, 0, 1, 0],
+                               [0, 0, 0, 1]])
+
+    proj_right = k @ np.array([[1, 0, 0, -0.5372],
+                               [0, 1, 0, 0],
+                               [0, 0, 1, 0],
+                               [0, 0, 0, 1]])
+
+    temp_pc_4d = cv2.triangulatePoints(proj_left, proj_right, keypoints_left, keypoints_right)  # ndarray (4,n)
+    temp_pc_3d = temp_pc_4d[0:3] / temp_pc_4d[-1]  # ndarray (3,n)
+
+    filter_bool = get_relative_point_cloud_filter(temp_pc_3d)
+    keypoints_left_filtered = keypoints_left[:, filter_bool]
+    keypoints_right_filtered = keypoints_right[:, filter_bool]
+    descriptors_left_filtered = descriptors_left[filter_bool, :]
+
+def get_relative_point_cloud_filter(pc):
+    """ :param pc: ndarray (3,n) """
+    x_abs = np.abs(pc[0])
+    y_abs = np.abs(pc[1])
+    x_crit = (x_abs <= 50)
+    y_crit = (y_abs <= 50)
+    z_crit1 = pc[2] < 200
+    z_crit2 = pc[2] > 1
+    z_crit = z_crit1 * z_crit2
+    filter_bool = (x_crit * y_crit) * z_crit
+    return filter_bool # boolean array (n,)
+
+######## (5) Match between two consecutive frames ########
+def match_consecutive_frames(frame_idx)
+    kp_left0, desc_left_0, kp_right_0 = get_filtered_keypoints_descriptors(frame_idx)
+    kp_left1, desc_left_1, kp_right_1 = get_filtered_keypoints_descriptors(frame_idx+1)
+    matcher = cv2.BFMatcher(normType=cv2.NORM_L2, crossCheck=True)
+    matches = matcher.match(desc_l0, desc_l1)
+    good_matches_left0_left1 = filter_matches(matches, kp_left0, kp_left1, is_stereo=False)
+
+######## (6) Send to PNP #######
+
+
+
+

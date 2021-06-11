@@ -1,3 +1,4 @@
+-------------------- Frame works ------------------------
 we have an image
 |------------(x=1226)
 |
@@ -13,3 +14,12 @@ we reference the bottom-left corner with img[370,0]
 
 * when we want to reference an image point, we do img[y,x]
 
+-------------------- Relative Errors ------------------------
+The relative translation / rotation error is computed in the following way:
+Say I have my estimate of extrinsic matrix from (left) frame i to (left) frame j, with j>i.
+I can extract translation vector t_i_j, a 3x1 vector, and rotation matrix r_i_j, a 3x3 matrix.
+I denote them by t_i_j_mine and r_i_j_mine. Similarly I can compute t_i_j_kitti and r_i_j_kitti.
+The relative translation error between frames i and j, error(i -> j),  is abs(t_i_j_mine - t_i_j_kitti),
+and the relative rotation error is as david said in the forom between matrices r_i_j_mine and r_i_j_kitti.
+- In stage2 I compute the relative between every two consecutive frames (0 -> 1, 1 -> 2, ...), and in stage3 I compute relative between every two keyframes (0->10, 10->20, ...)
+- When I write "Error before optimization, after" these are the results of calling optimizer.error() before and after optimizer.optimie()

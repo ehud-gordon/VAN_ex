@@ -47,12 +47,10 @@ class Drive:
             kp_l1, desc_l1, kp_r1, pc_l1_r1_temp = triang.filter_based_on_triang(kp_l=kp_l1, desc_l=desc_l1, kp_r=kp_r1, pc=pc_l1_r1_temp)
             # match l0-l1
             matches_l0_l1 = featurez.matcher.match(queryDescriptors=desc_l0, trainDescriptors=desc_l1)  # list of matches [DMatch1,... DMatch1N]
+
             # I have found that l1_bad_inds doesn't improve
             matches_l0_l1 = features.filter_matches(matches_l0_l1, kp0=kp_l0, kp1=kp_l1, stereo_filter=False)
             # matches_l0_l1 = features.filter_matches(matches_l0_l1, kp0=kp_l0, kp1=kp_l1, stereo_filter=False,l1_bad_inds=l1_bad_inds)
-
-            # knn_matches_l0_l1 = featurez.match_desc_knn(desc1=desc_l0, desc2=desc_l1)
-            # matches_l0_l1 = features.filter_knn_matches(knn_matches_l0_l1, kp1=kp_l0, kp2=kp_l1, stereo_filter=False)
 
             # get ext_l0_l1
             if args.kitti:
@@ -63,7 +61,6 @@ class Drive:
                 ext_l0_l1, ext_inliers_bool, proj_errors_to_l1 = pnp.pnp_ransac()  # (4,4), (len(matches)
                 l1_matched_inds = [m.trainIdx for m in matches_l0_l1] # 388
                 l1_bad_inds = set(compress(l1_matched_inds, ~ext_inliers_bool))
-                a=3
 
             # compute pc_l1_r1
             if args.globaly:
