@@ -11,7 +11,7 @@ np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dic
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--dataset_path", type=str, default=kitti.data_path())
-    parser.add_argument("--fig_path", type=str, default=utils.fig_path())
+    parser.add_argument("--out_dir", type=str, default=utils.out_dir())
 
     parser.add_argument("--plot", action="store_true", default=False)
     parser.add_argument("--save", action="store_true", default=False)
@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--det", type=str, choices=["SIFT", "SURF", "AKAZE"], default="SIFT",help="detector")
     parser.add_argument("--desc", type=str, choices=["SIFT", "SURF", "AKAZE",],default="SIFT", help="descriptor")
     parser.add_argument("--feature_grid", action="store_true", default=False, help="boolean, whether to detect keypoints based on grid")
-    parser.add_argument("--matcher", type=str, choices=["BF", "FLANN"], default="FLANN")
+    parser.add_argument("--matcher", type=str, choices=["BF", "FLANN"], default="BF")
     parser.add_argument("--store_tracks", action="store_true", default=False)
 
     parser.add_argument("--endframe", type=int, default=0)

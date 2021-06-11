@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import numpy as np
 import matplotlib.pyplot as plt
 from plotly.offline import plot
@@ -15,8 +17,7 @@ import tracks
 import my_plot
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
 
-def eval_tracks_db(tracks_name):
-    tracks_path = os.path.join(utils.track_path(), tracks_name+'.pickle')
+def eval_tracks_db(tracks_path):
     tracks_db = tracks.read(tracks_path)
     endframe = tracks_db.endframe  # 50
     k, ext_l0, ext_r0 = kitti.read_cameras()  # k=(3,4) ext_l0/r0 (4,4)
@@ -82,9 +83,9 @@ def eval_tracks_db(tracks_name):
     fig.update_layout(title_x=0.5)
     plot(fig)
 
-def filter_tracks_db(tracks_name):
+def filter_tracks_db(tracks_path):
+    tracks_dir, tracks_name, ext = utils.dir_name_ext(tracks_path)
     print(f'filtering {tracks_name}')
-    tracks_path = os.path.join(utils.track_path(), tracks_name+'.pickle')
     tracks_db = tracks.read(tracks_path)
     filtered_tracks_db = tracks.Tracks_DB(args=tracks_db.args, ext_l1s=tracks_db.ext_l1s)
     filtered_tracks_db.td[0] = dict()
@@ -97,7 +98,6 @@ def filter_tracks_db(tracks_name):
     for cam_id in range(1, endframe+1):
         filtered_tracks_orig_frame_count.append(0)
         filtered_tracks_db.td[cam_id] = dict()
-        ext_li = kitti.read_poses_world_to_cam([cam_id])[0]
         ext_li = tracks_db.ext_l1s[cam_id]
         proj_li = k @ ext_li
         ext_ri = ext_r0 @ ext_li
@@ -129,13 +129,30 @@ def filter_tracks_db(tracks_name):
             if track.orig_m_id not in filtered_tracks_db.td[track.orig_cam_id]:
                 filtered_tracks_db.td[track.orig_cam_id][track.orig_m_id] = tracks_db.td[track.orig_cam_id][track.orig_m_id]
                 filtered_tracks_orig_frame_count[-2] += 0
+    # count tracks lengths
+    visited_tracks_set = set()
+    filtered_tracks_length = defaultdict(int)
+    for cam_idx in range(endframe, 0,-1):
+        for track in tracks_db.get_tracks(cam_id=cam_idx):
+            if track.id in visited_tracks_set:
+                continue
+            if track.length == 1:
+                print("problem: ",cam_idx, track)
+                z=3
+            visited_tracks_set.add(track.id)
+            filtered_tracks_length[track.length] += 1
+    lengths_counts = sorted(filtered_tracks_length.items(), key=lambda tup: tup[0])
+    tracks_lengths, counts = zip(*lengths_counts)
+    # prints
     pct = filtered_tracks_count / total_tracks
     print(f"filtered {filtered_tracks_count}/{total_tracks}={pct:.2%} tracks")
-    filtered_tracks_db.serialize(title=f"{tracks_name}_filtered")
+    filtered_tracks_db.serialize(dir_path=tracks_dir, title="_filtered")
 
-    my_plot.plotly_bar(nums=filtered_tracks_orig_frame_count, title=f"filtered tracks original frame {tracks_name}")
+    # plots
+    # my_plot.plotly_bar(y=counts, bins=tracks_lengths, title="lengths of filtered_tracks")
+    my_plot.plotly_bar(y=filtered_tracks_orig_frame_count, title=f"filtered_tracks frame of origin {tracks_name}")
 
 
 if __name__=="__main__":
-    dir, tracks_name, ext = utils.dir_name_ext("06_08_18_36_mine_global_50.pickle")
-    filter_tracks_db(tracks_name=tracks_name)
+    tracks_path = r"C:\Users\godin\Documents\VAN_ex\out\06-10-18-20_mine_global_2760\stage2_626.9_114.5\stage2_tracks_2760.pkl"
+    filter_tracks_db(tracks_path=tracks_path)

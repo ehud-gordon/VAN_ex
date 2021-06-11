@@ -1,32 +1,30 @@
-import os
-
 import cv2
 import numpy as np
-
-import kitti
-import utils
 import matplotlib.pyplot as plt
 from matplotlib.patches import ConnectionPatch
 
+import os
+
+import kitti
+import utils
 
 class PNP:
-    def __init__(self, k, ext_r0):
+    def __init__(self, k, ext_li_ri):
         self.k = k # (3,4)
         self.k3 = k[:,:3] # (3,3)
-        self.ext_r0 = ext_r0 # (4,4)
+        self.ext_li_ri = ext_li_ri # (4,4) extrinsic, from world_left_i to world_right_i
 
     def set_with_matches(self, matches_l0_l1, kp_l0, kp_l1, pc_l0_r0, kp_r1):
         """
         :param matches_l0_l1: [DMatch1,...,] between queryIdx in pc_l0 and trainIdx in kp_l1/r1
         :param kp_l0: (2,n) of x-y pixels of kp
-        :param pc_l0_r0: point cloud, (3,n) matrix, in l0 coordinates, filtered by matches from original pc_l0_r0
+        :param pc_l0_r0: point cloud, (3,n) matrix, in world_left_0, filtered by matches from original pc_l0_r0
         :return:
         """
         query_inds = [m.queryIdx for m in matches_l0_l1]
         train_inds = [m.trainIdx for m in matches_l0_l1]
-        self.pc_l0_r0 = pc_l0_r0[:,query_inds]
-        self.pc_l0_r0_4d = np.vstack((self.pc_l0_r0, np.ones(self.pc_l0_r0.shape[1]))) # (4,n)
 
+        self.pc_l0_r0 = pc_l0_r0[:,query_inds]
         self.kp_l0 = kp_l0[:,query_inds]
         self.kp_l1 = kp_l1[:,train_inds]
         self.kp_r1 = kp_r1[:,train_inds]
@@ -34,7 +32,7 @@ class PNP:
     def set(self, kp_l1, pc_l0_r0, kp_r1):
         """
         :param kp_l1/r1: (2,n) of x-y pixels of kp in l1/r1 that're 4-matched
-        :param pc_l0_r0: point cloud, (3,n) matrix, in l0 coordinates, filtered by matches from original pc_l0_r0
+        :param pc_l0_r0: point cloud, (3,n) matrix, in world_left_0, filtered by matches from original pc_l0_r0
         :return:
         """
         assert kp_l1.shape[1] ==  kp_r1.shape[1] == pc_l0_r0.shape[1]
@@ -48,8 +46,8 @@ class PNP:
                                                          cameraMatrix=self.k3, distCoeffs=None, flags=cv2.SOLVEPNP_P3P)
         if not retval:
             return None
-        ext_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) FROM WORLD (l0) TO CAMERA (l1)
-        return ext_l1
+        ext_l0_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) FROM world_left_0 to world_left_1 (camera)
+        return ext_l0_l1
 
     def pnp_ransac(self):
         eps = 0.99 # initial percent of outliers
@@ -58,65 +56,40 @@ class PNP:
         iters_to_do = np.log(1-p) / np.log(1-(1-eps)**s)
         iters_done = 0
 
-        best_ext_l1 = None
-        best_ext_l1_inliers_bool = np.zeros(1)
-        largest_inlier_ind = 0
-        best_dists_l1 = None
+        best_ext_l0_l1 = None
+        best_inliers_bool = np.zeros(1)
+        best_proj_errors = None
 
         while iters_done <= iters_to_do:
-            ext_l1 = self.pnp()
-            if ext_l1 is None: continue
-            inliers_bool, dists_l1 = self.inliers(ext_l1=ext_l1)
+            ext_l0_l1 = self.pnp()
+            if ext_l0_l1 is None: continue
+            inliers_bool, projections_errors_to_l1 = utils.get_consistent_with_extrinsic(self.kp_l1, self.kp_r1, self.pc_l0_r0, ext_l0_l1,self.ext_li_ri, self.k)
             inlier_per = sum(inliers_bool) / self.kp_l1.shape[1]
             eps = min(eps,1-inlier_per) # get upper bound on percent of outliers
-            iters_done +=1
-            iters_to_do = np.log(1-p) / np.log(1-(1-eps)**s) # recompute required number of iterations
-            if sum(inliers_bool) >= sum(best_ext_l1_inliers_bool):
-                largest_inlier_ind = iters_done
-                best_ext_l1 = ext_l1
-                best_ext_l1_inliers_bool = inliers_bool
-                best_dists_l1 = dists_l1
-        # print(f"number of pnp ransac done {iters_done}, largest inlier at {largest_inlier_ind}, with {sum(best_ext_l1_inliers_bool)} inliers")
-        # refine ext_l1 by computing it from all its inlier
-        inlier_pc_l0 = self.pc_l0_r0[:, best_ext_l1_inliers_bool]
-        inlier_kp_l1 = self.kp_l1[:, best_ext_l1_inliers_bool]
+            iters_done += 1
+            iters_to_do = np.log(1-p) / np.log(1-(1-eps)**s) # re-compute required number of iterations
+            if sum(inliers_bool) >= sum(best_inliers_bool):
+                best_ext_l0_l1 = ext_l0_l1
+                best_inliers_bool = inliers_bool
+                best_proj_errors = projections_errors_to_l1
 
-        # refine ext_l1 by computing pnp from all its inliers
+        # refine ext_l0_l1 by computing it from all its inliers
+        inlier_pc_l0 = self.pc_l0_r0[:, best_inliers_bool]
+        inlier_kp_l1 = self.kp_l1[:, best_inliers_bool]
         try:
             tmp_pc_l0, tmp_pxls_l1 = get_pc_pxls_for_cv_pnp(pc_l0_r0=inlier_pc_l0, pxls_l1=inlier_kp_l1, size=inlier_pc_l0.shape[1])
             retval, rvec, tvec = cv2.solvePnP(objectPoints=tmp_pc_l0, imagePoints=tmp_pxls_l1, cameraMatrix=self.k3, distCoeffs=None)
-            best_ext_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) FROM WORLD (l0) TO CAMERA (l1)
+            best_ext_l0_l1 = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) from world_left_0 to world_left_1
+            best_inliers_bool, best_proj_errors = utils.get_consistent_with_extrinsic(self.kp_l1, self.kp_r1,
+                                                                                         self.pc_l0_r0, best_ext_l0_l1,
+                                                                                         self.ext_li_ri, self.k)
         except:
             print("failure in refine best_ext_l1")
 
-        self.best_dists_l1 = best_dists_l1
-        self.best_ext_l1 = best_ext_l1
-        self.best_ext_l1_inliers_bool = best_ext_l1_inliers_bool
-        return best_ext_l1, best_ext_l1_inliers_bool
-
-
-    def inliers(self, ext_l1):
-        """
-        :param ext_l1: m (4,4) of l1, in l0 coordinates
-        :return:
-        """
-        proj_l1 = self.k @ ext_l1 # (3,4)
-        ext_r1 = self.ext_r0 @ ext_l1 # (4,4)
-        proj_r1 = self.k @ ext_r1  # (3,4)
-
-        # project pc_l0 to l1
-        projected_l1 = proj_l1 @ self.pc_l0_r0_4d # (3,n)
-        projected_l1 = projected_l1[0:2] / projected_l1[-1]  # (2,n)
-
-        # project pc_l0 to r1
-        projected_r1 = proj_r1 @ self.pc_l0_r0_4d # (3,n)
-        projected_r1 = projected_r1[0:2] / projected_r1[-1]  # (2,n)
-
-        dists_l1 = np.sqrt(np.sum((self.kp_l1 - projected_l1)**2, axis=0))
-        dists_r1 = np.sqrt(np.sum((self.kp_r1 - projected_r1)**2, axis=0))
-        REPROJ_THRESH = 2
-        inliers_bool = np.logical_and(dists_l1<=REPROJ_THRESH, dists_r1<=REPROJ_THRESH)
-        return inliers_bool, dists_l1
+        self.best_proj_errors = best_proj_errors
+        self.best_ext_l0_l1 = best_ext_l0_l1
+        self.best_inliers_bool = best_inliers_bool
+        return self.best_ext_l0_l1, self.best_inliers_bool, self.best_proj_errors
 
 def get_pc_pxls_for_cv_pnp(pc_l0_r0, pxls_l1, size):
     """ make sure that pc_l0_r0[i] is the world_point of pxls_l1[i]
@@ -162,12 +135,12 @@ def plot_inliers_outliers_of_ext1(idx_of_l0, filt_kp_l0, filt_kp_l1, ext_l1_inli
         img_l1 = cv2.circle(img_l1, center=tuple(px), radius=4, color=color, thickness=1)
     utils.cv_disp_img(img_l1, title=f"l1 {idx_of_l0+1} inlier (green),outlier (blue) of best ext_l1 ", save=False)
 
-def draw_inliers_double(l0_idx, kp1, kp2, inliers, best_dists_l1, size,save=False):
+def draw_inliers_double(l0_idx, kp1, kp2, inliers, best_proj_errors, size, save=False):
     """  :param kp1/2: (2,n)
     :param inliers: bool array of size (n) """
     img_l0, img_r0 = kitti.read_images(idx=l0_idx, color_mode=cv2.IMREAD_COLOR)
     img_l1, img_r1 = kitti.read_images(idx=l0_idx + 1, color_mode=cv2.IMREAD_COLOR)
-    dists_l1 = best_dists_l1
+    proj_errors_l1 = best_proj_errors
     fig, (ax1, ax2) = plt.subplots(1, 2)
     plt.suptitle(f"l{l0_idx}-l{l0_idx+1}, {sum(inliers)} inliers / {inliers.size} matches")
     ax1.imshow(img_l0); ax1.axis('off')
@@ -178,7 +151,7 @@ def draw_inliers_double(l0_idx, kp1, kp2, inliers, best_dists_l1, size,save=Fals
     for i in inds:
         xy1 = kp1[:,i]
         xy2 = kp2[:,i]
-        print(f'{xy1}-{xy2} {"inlier" if inliers[i] else "outlier"}, {dists_l1[i]:.2f}')
+        print(f'{xy1}-{xy2} {"inlier" if inliers[i] else "outlier"}, {proj_errors_l1[i]:.2f}')
         color = "green" if inliers[i] else "red"
         con = ConnectionPatch(xyA=tuple(xy1), xyB=tuple(xy2), coordsA="data", coordsB="data",
                               axesA=ax1, axesB=ax2, color=color)

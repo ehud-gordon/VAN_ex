@@ -108,15 +108,18 @@ def read_poses_world_to_cam(idx, dataset_path=None):
     return matrices
 
 def read_relative_poses_world_to_cam(idx, dataset_path=None):
-    """ the pose l{idx} (world to cam) relative to l{idx-1}"""
-    assert len(idx) == 1
-    assert idx[0] >= 1
+    """ from l{idx-1} to to l{idx}"""
     if dataset_path is None:
         dataset_path = data_path()
-    idx = [idx[0]-1] + idx
-    l0, l1 = read_poses_world_to_cam(idx, dataset_path)
-    r0_to_r1, t0_to_t1 = utils.get_l0_to_l1_trans_rot(l0=l0, l1=l1)
-    return r0_to_r1, t0_to_t1
+    left_mats = read_poses_world_to_cam(idx, dataset_path)
+    r0_to_r1_s, t0_to_t1_s = [], []
+    for i in range(1, len(left_mats)):
+        r0_to_r1, t0_to_t1 = utils.r0_to_r1_t0_to_t1(l0=left_mats[i-1], l1=left_mats[i])
+        r0_to_r1_s.append(r0_to_r1)
+        t0_to_t1_s.append(t0_to_t1)
+    r0_to_r1_s = np.array(r0_to_r1_s)
+    t0_to_t1_s = np.array(t0_to_t1_s)
+    return r0_to_r1_s, t0_to_t1_s.T
 
 
 def read_trans_vectors(idx, dataset_path=None):
@@ -142,10 +145,8 @@ def get_poses_path_from_dataset_path(dataset_path):
     poses_path = os.path.join(dataset_path, 'poses', seq_num+'.txt')
     return poses_path
 
-# if __name__=="__main__":
-#     np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
-#     idx = [0,1,2,3]
-#     dws = read_dws(idx=idx)
-#     trans_vecs = read_trans_vectors(idx)
-#
-#     z=3
+if __name__=="__main__":
+    np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+    idx = [0,10,20]
+    rots, trans = read_relative_poses_world_to_cam(idx=idx)
+    z=3

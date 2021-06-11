@@ -1,5 +1,4 @@
 import os
-import random
 
 import cv2
 import numpy as np
@@ -28,11 +27,12 @@ class Features:
     def decide_matcher(self):
         if self.matcher_type == "BF":
             if self.desc in ["SURF", "SIFT"]:
-                return cv2.BFMatcher(normType=cv2.NORM_L2, crossCheck=False)
+                return cv2.BFMatcher(normType=cv2.NORM_L2, crossCheck=True)
             if self.desc in ["ORB", "BRISK", "BRIEF", "AKAZE"]:
-                return cv2.BFMatcher(normType=cv2.NORM_HAMMING, crossCheck=False)
+                return cv2.BFMatcher(normType=cv2.NORM_HAMMING, crossCheck=True)
 
         elif self.matcher_type == "FLANN":
+            index_params = None
             search_params = dict(checks=100)  # or pass empty dictionary
             if self.desc in ["SURF", "SIFT"]:
                 FLANN_INDEX_KDTREE = 1
@@ -92,55 +92,63 @@ class Features:
         # print(f"num of unmatched kps:{kp.shape[1]}")
         return kp, desc # (2,n), # (n,128)
 
-    def match_desc_knn(self,desc1,desc2):
-        """ matches each descriptor in desc1 to two-closest descriptors in desc2
-        :param desc1: ndarry (N1, 32) of descriptors of keypoints in img1
-        :param desc2: ndarry (N2, 32) of descriptors of keypoints in img2
-        :return: [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
-                list of N1 lists, each list contains 2 DMatch objects, the first one is the closer
-        """
-        knn_matches = self.matcher.knnMatch(desc1, desc2, k=2) # [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
-        return knn_matches
-
-
     def get_kps_desc_stereo_pair(self, idx):
         img_l0, img_r0 = kitti.read_images(idx=idx)
-        return self.get_kps_desc(img1=img_l0, img2=img_r0, stereo_filter=True)
+        return self.get_kps_desc(img0=img_l0, img1=img_r0, stereo_filter=True)
 
-    def get_kps_desc(self,img1, img2, stereo_filter):
+    def get_kps_desc(self,img0, img1, stereo_filter):
         """   :return: kps and descs of (and only of) good matches """
         if self.feature_grid:
-            kp1, desc1 = self.kp_desc_grid(img=img1) # (2,n1), ndarray (n1,32)
-            kp2, desc2 = self.kp_desc_grid(img=img2) # # (2,n2), ndarray (n2,32)
+            kp0, desc0 = self.kp_desc_grid(img=img0) # (2,n1), ndarray (n1,32)
+            kp1, desc1 = self.kp_desc_grid(img=img1) # # (2,n2), ndarray (n2,32)
         else:
-            kp1, desc1 = self.kp_desc(img=img1, plot_keypoints=self.plot_keypoints)  # (2,n1), ndarray (n1,32)
-            kp2, desc2 = self.kp_desc(img=img2, plot_keypoints=self.plot_keypoints)  # (2,n2), ndarray (n2,32)
-        knn_matches = self.match_desc_knn(desc1=desc1, desc2=desc2)  # list of N1 lists [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
-        matches = filter_knn_matches(knn_matches=knn_matches, kp1=kp1, kp2=kp2, stereo_filter=stereo_filter)
-        # a = DrawMatchesDouble(img1=img1, img2=img2, kp1=distant_kp1, kp2=distant_kp2)
-        # a.draw_matches_double(size=0, save=False, matcher_name=f'distant_matches__grid={self.feature_grid}_{self.matcher_type}_{self.det}_{self.desc}')
+            kp0, desc0 = self.kp_desc(img=img0, plot_keypoints=self.plot_keypoints)  # (2,n1), ndarray (n1,32)
+            kp1, desc1 = self.kp_desc(img=img1, plot_keypoints=self.plot_keypoints)  # (2,n2), ndarray (n2,32)
 
-        filt_kp1, filt_desc1, filt_kp2  = filter_kp_desc_on_matches(kp1=kp1, kp2=kp2, desc1=desc1, matches=matches)
+        # knn_matches = self.matcher.knnMatch(desc1, desc2,k=2)  # [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
+        # matches = filter_knn_matches(knn_matches=knn_matches, kp1=kp1, kp2=kp2, stereo_filter=stereo_filter)
+        matches = self.matcher.match(queryDescriptors=desc0, trainDescriptors=desc1)  # list of matches [DMatch1,... DMatch1N]
+        matches = filter_matches(matches, kp0=kp0, kp1=kp1, stereo_filter=stereo_filter)
+
+        filt_kp0, filt_desc0, filt_kp1  = filter_kp_desc_on_matches(kp0=kp0, kp1=kp1, desc0=desc0, matches=matches)
         if self.plot_matches:
-            a = DrawMatchesDouble(img1=img1, img2=img2, kp1=filt_kp1, kp2=filt_kp2)
-            a.draw_matches_double(size=0, save=False, matcher_name=f'{self.matcher_type}_{self.det}_{self.desc}')
-        return filt_kp1, filt_desc1, filt_kp2
+            a = DrawMatchesDouble(img0=img0, img1=img1, kp0=filt_kp0, kp1=filt_kp1)
+            a.draw_matches_double(size=0, save=False, matcher_name=f'{self.matcher_type}_{self.det}_{self.desc}_stereo={stereo_filter}')
+        return filt_kp0, filt_desc0, filt_kp1
 
-def filter_kp_desc_on_matches(kp1, kp2, desc1, matches):
+def filter_kp_desc_on_matches(kp0, kp1, desc0, matches):
     query_ind = [m.queryIdx for m in matches]
     train_ind = [m.trainIdx for m in matches]
-    filt_kp1 = kp1[:, query_ind]
-    filt_desc1 = desc1[query_ind]
-    filt_kp2 = kp2[:, train_ind]
+    filt_kp0 = kp0[:, query_ind]
+    filt_desc0 = desc0[query_ind]
+    filt_kp1 = kp1[:, train_ind]
 
-    return filt_kp1, filt_desc1, filt_kp2
+    return filt_kp0, filt_desc0, filt_kp1
 
-def filter_knn_matches(knn_matches, kp1, kp2, stereo_filter):
+def filter_matches(matches, kp0, kp1, stereo_filter, l1_bad_inds=None):
+    good_matches = []
+    match_distances = []
+    for m in matches:
+        y_dist = abs(kp0[1, m.queryIdx] - kp1[1, m.trainIdx])
+        if stereo_filter and (y_dist > utils.MATCH_Y_DIST_MAX):
+            continue
+        match_distances.append(m.distance)
+        if m.distance >= 200:
+            continue
+        if l1_bad_inds and m.queryIdx in l1_bad_inds:
+            continue
+        good_matches.append(m)
+    # my_plot.plotly_hist(y=match_distances, title="match distances",density=True, plot=True, save=False)
+    # plt.hist(match_distances, density=True);plt.show()
+    return good_matches
+
+
+def filter_knn_matches(knn_matches, kp0, kp1, stereo_filter):
     """ filter matches based on Lowe's threshold and stereo_constraint,
         and returns good matches
     :param knn_matches: (list of N1 lists [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
             matching between kp1 (query) and kp2 (train))
-    :param kp1/2: (2,n1/2)] in image 1/2, query/train
+    :param kp0/1: (2,n1/2)] in image 0/1, query/train
     :param stereo_filter: boolean, whether to filter based on stereo constraint
     :return: good_matches: [DMatch_1, ..., DMatch_n]
     """
@@ -169,26 +177,28 @@ def filter_knn_matches(knn_matches, kp1, kp2, stereo_filter):
     #     print(f'stereo_lowe={stereo_lowe}, stereo_no_lowe={stereo_no_lowe}')
     #     print(f'no_stereo_lowe={no_stereo_lowe}, no_stereo_no_lowe={no_stereo_no_lowe}\n')
     hst = []
+    distant_kp0 = []
     distant_kp1 = []
-    distant_kp2 = []
     for i in range(len(knn_matches)):
         if len(knn_matches[i]) != 2:
             continue
         m1, m2 = knn_matches[i]
         if m1.distance < ratio_thresh * m2.distance:
-            y_dist = abs(kp1[1, m1.queryIdx] - kp2[1,m1.trainIdx])
+            y_dist = abs(kp0[1, m1.queryIdx] - kp1[1,m1.trainIdx])
             if stereo_filter and (y_dist > utils.MATCH_Y_DIST_MAX):
                 continue
             # hst.append(m1.distance)
             if m1.distance >= 200:
                 continue
             # if m1.distance >=150:
-            #     distant_kp1.append(m1.queryIdx)
-            #     distant_kp2.append(m1.trainIdx)
+            #     distant_kp0.append(m1.queryIdx)
+            #     distant_kp1.append(m1.trainIdx)
             good_matches.append(m1)
     # plt.hist(hst, density=True);plt.show()
-    # distant_kp1 = kp1[:,distant_kp1]; distant_kp2 = kp2[:,distant_kp2]
+    # distant_kp0 = kp0[:,distant_kp0]; distant_kp1 = kp1[:,distant_kp1]
     return good_matches
+
+
 
 def image_to_grid(img):
     """
@@ -214,18 +224,19 @@ def image_to_grid(img):
 #########################   Visualization Utils   #########################
 
 class DrawMatchesDouble:
-    def __init__(self, img1, img2, kp1, kp2):
-        if isinstance(kp1, list):
+    def __init__(self, img0, img1, kp0, kp1):
+        if isinstance(kp0, list):
+            kp0 = get_kp_from_KeyPoints(kp0)
             kp1 = get_kp_from_KeyPoints(kp1)
-            kp2 = get_kp_from_KeyPoints(kp2)
-        if img1.ndim == 2:
+        if img0.ndim == 2:
+            img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
             img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
-            img2 = cv2.cvtColor(img2, cv2.COLOR_GRAY2RGB)
+        self.img0 = img0
         self.img1 = img1
-        self.img2 = img2
+        self.kp0 = kp0
         self.kp1 = kp1
-        self.kp2 = kp2
-        self.ckdtree1 = scipy.spatial.cKDTree(kp1.T); self.ckdtree2 = scipy.spatial.cKDTree(kp2.T)
+        self.ckdtree0 = scipy.spatial.cKDTree(kp0.T)
+        self.ckdtree1 = scipy.spatial.cKDTree(kp1.T)
         self.con_ind = 0
         self.cons = []
         self.curr_cons = []
@@ -235,16 +246,16 @@ class DrawMatchesDouble:
         self.curr_cons = []
 
     def onkeypress(self,event):
-        if event.key == 'c':
+        if event.key == 'c': # clear all
             self.clear_cons()
-        if event.key == 'd':
+        if event.key == 'd': # draw all
             if len(self.curr_cons) == len(self.cons):
                 return
             else:
                 self.clear_cons()
                 [self.ax2.add_artist(con) for con in self.cons]
                 self.curr_cons = self.cons
-        if event.key == 'n':
+        if event.key == 'n': # draw only next
             self.clear_cons()
             self.curr_cons = [self.cons[self.con_ind]]
             self.ax2.add_artist(self.cons[self.con_ind])
@@ -256,38 +267,38 @@ class DrawMatchesDouble:
         if event.inaxes is None:
             return
         if event.inaxes == self.ax1:
-            closest_index = self.ckdtree1.query([event.xdata,event.ydata])[1]
+            closest_index = self.ckdtree0.query([event.xdata,event.ydata])[1]
         else:
-            closest_index = self.ckdtree2.query([event.xdata, event.ydata])[1]
-        xy1 = self.kp1[:,closest_index]
-        xy2 = self.kp2[:, closest_index]
+            closest_index = self.ckdtree1.query([event.xdata, event.ydata])[1]
+        xy0 = self.kp0[:,closest_index]
+        xy1 = self.kp1[:, closest_index]
         self.clear_cons()
-        con = ConnectionPatch(xyA=tuple(xy1), xyB=tuple(xy2), coordsA="data", coordsB="data",
-                                  axesA=self.ax1, axesB=self.ax2, alpha=0.5, color="blue")
+        con = ConnectionPatch(xyA=tuple(xy0), xyB=tuple(xy1), coordsA="data", coordsB="data",
+                                  axesA=self.ax0, axesB=self.ax1, alpha=0.5, color="blue")
         self.curr_cons = [con]
-        self.ax2.add_artist(con)
+        self.ax1.add_artist(con)
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
     def draw_matches_double(self,size=0, save=False, matcher_name=""):
-        self.fig, (self.ax1, self.ax2) = plt.subplots(1, 2)
+        self.fig, (self.ax0, self.ax1) = plt.subplots(1, 2)
         self.fig.canvas.mpl_connect('button_press_event', self.onmouseclick)
         self.fig.canvas.mpl_connect('key_press_event', self.onkeypress)
         plt.suptitle(f"matches_{matcher_name}")
+        self.ax0.imshow(self.img0); self.ax0.axis('off')
         self.ax1.imshow(self.img1); self.ax1.axis('off')
-        self.ax2.imshow(self.img2); self.ax2.axis('off')
         inds = range(self.kp1.shape[1])
         if size:
-            inds = np.random.choice(self.kp1.shape[1], size=size, replace=False)
+            inds = np.random.choice(self.kp0.shape[1], size=size, replace=False)
         for i in inds:
+            xy0 = self.kp0[:, i]
             xy1 = self.kp1[:, i]
-            xy2 = self.kp2[:, i]
-            con = ConnectionPatch(xyA=tuple(xy1), xyB=tuple(xy2), coordsA="data", coordsB="data",
-                                  axesA=self.ax1, axesB=self.ax2, alpha=1, color="blue")
+            con = ConnectionPatch(xyA=tuple(xy0), xyB=tuple(xy1), coordsA="data", coordsB="data",
+                                  axesA=self.ax0, axesB=self.ax1, alpha=1, color="blue")
             self.cons.append(con)
-            self.ax2.add_artist(con)
+            self.ax1.add_artist(con)
+            self.ax0.plot(xy0[0], xy0[1], f'ro', markersize=3)
             self.ax1.plot(xy1[0], xy1[1], f'ro', markersize=3)
-            self.ax2.plot(xy2[0], xy2[1], f'ro', markersize=3)
         self.curr_cons = self.cons
         self.fig.subplots_adjust(left=0.01, bottom=0.19, right=0.99, top=0.94, wspace=0.01, hspace=0.2)
         if save:

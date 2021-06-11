@@ -1,5 +1,3 @@
-from argparse import Namespace
-
 import matplotlib.pyplot as plt
 import cv2
 import os
@@ -16,9 +14,7 @@ def get_quantile_point_cloud_filter(pc):
     return filtered
 
 def get_relative_point_cloud_filter(pc):
-    """
-    :param pc: (3,n)
-    """
+    """ :param pc: (3,n) """
     x_abs = np.abs(pc[0]); y_abs = np.abs(pc[1])
     x_crit = (x_abs <= 50)
     y_crit = (y_abs <= 50)
@@ -32,28 +28,28 @@ def filter_based_on_triang(kp_l, desc_l, kp_r, pc):
     filtered = get_relative_point_cloud_filter(pc)
     return kp_l[:,filtered], desc_l[filtered], kp_r[:, filtered], pc[:,filtered]
 
-def triang(kp1, kp2, k, m1, m2):
+def triang(kpA, kpB, k, mA, mB):
     """
     get 3D (World) coordinates via triangulation of matched pixels from two images
-    :param kp1/2: pixels of matched points in image1/2, (2,n) array
-    :param k: intrinsics  matrix shared by camera 1/2, (3,4)
-    :param m1/2: extrinsics matrices of camera 1/2 (4,4)
-    :return: (3,n) ndarray of world coordinates relative to camera1 (left camera)
+    :param kpA/B: pixels of matched points in imageA/B, (2,n) array
+    :param k: intrinsics  matrix shared by camera A/B, (3,4)
+    :param mA/B: extrinsics matrices of camera A/B (4,4)
+    :return: (3,n) ndarray of world coordinates in coordinates frame of cameraA
     """
-    assert kp1.shape == kp2.shape
-    p1 = k @ m1  # (3,4) # projection matrix
-    p2 = k @ m2  # (3,4)
+    assert kpA.shape == kpB.shape
+    pA = k @ mA  # (3,4) # projection matrix
+    pB = k @ mB  # (3,4)
 
-    pc_4d = cv2.triangulatePoints(projMatr1=p1, projMatr2=p2, projPoints1=kp1, projPoints2=kp2)  # (4,n)
+    pc_4d = cv2.triangulatePoints(projMatr1=pA, projMatr2=pB, projPoints1=kpA, projPoints2=kpB)  # (4,n)
     pc_3d = pc_4d[0:3] / pc_4d[-1]  # (3,n)
     return pc_3d
 
-def triang_from_keypoints(kp1, kp2, k, m1, m2):
-    """ :param kp1/2: [KeyPoint1, .... , KeypointN] """
-    assert len(kp1) == len(kp2)
+def triang_from_keypoints(kp0, kp1, k, m0, m1):
+    """ :param kp0/1: [KeyPoint1, .... , KeypointN] """
+    assert len(kp0) == len(kp1)
+    pxls0 = np.array([kp.pt for kp in kp0]).T  # (2,n_matches)
     pxls1 = np.array([kp.pt for kp in kp1]).T  # (2,n_matches)
-    pxls2 = np.array([kp.pt for kp in kp2]).T  # (2,n_matches)
-    pc_3d = triang(kp1=pxls1, kp2=pxls2, k=k, m1=m1, m2=m2)  # (3,n_matches)
+    pc_3d = triang(kp0=pxls0, kp1=pxls1, k=k, m0=m0, m1=m1)  # (3,n_matches)
     return pc_3d
 
 #########################   Visualization utils  #########################
