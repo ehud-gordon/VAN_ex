@@ -1,8 +1,8 @@
 ######## (1) Getting Keypoints and descriptors ########
 
 def get_keypoints_descriptors(img):
-    surf_feature2d = cv2.xfeatures2d_SURF.create(hessianThreshold=400)
-    keypoints, desc = surf_feature2d.detectAndCompute(img, None)
+    sift = cv2.SIFT_create(contrastThreshold=0.04, edgeThreshold=10) # nfeatures=0
+    keypoints, desc = sift.detectAndCompute(img,None)
     keypoints = np.array([keypoint.pt for keypoint in kp]).T # ndarray (2,n)
     return keypoints, desc
 
@@ -37,10 +37,10 @@ def get_keypoints_for_stereo_pair(frame_idx):
     # filtering keypoints and descriptors based on matches
     query_ind = [m.queryIdx for m in matches]
     train_ind = [m.trainIdx for m in matches]
-    filt_kp_left = kp_left[:, query_ind]
-    filt_desc_left = desc_left[query_ind]
-    filt_kp_right = kp_right[:, train_ind]
-    return filt_kp_left, filt_desc_left, filt_kp_right
+    kp_left_filt = kp_left[:, query_ind]
+    desc_left_filt = desc_left[query_ind]
+    kp_right_filt = kp_right[:, train_ind]
+    return kp_left_filt, desc_left_filt, kp_right_filt
 
 ######## (4) Filtering Keypoints, descriptors with triangulation ########
 
@@ -71,6 +71,8 @@ def simple_triangulation_filtering(kp_left, desc_left, kp_right):
     keypoints_right_filtered = keypoints_right[:, filter_bool]
     descriptors_left_filtered = descriptors_left[filter_bool, :]
 
+    return keypoints_left_filtered, descriptors_left_filtered,  keypoints_right_filtered
+
 def get_relative_point_cloud_filter(pc):
     """ :param pc: ndarray (3,n) """
     x_abs = np.abs(pc[0])
@@ -91,7 +93,10 @@ def match_consecutive_frames(frame_idx)
     matches = matcher.match(desc_l0, desc_l1)
     good_matches_left0_left1 = filter_matches(matches, kp_left0, kp_left1, is_stereo=False)
 
-######## (6) Send to PNP #######
+    # Now we filter kp_left0, desc_left_0, kp_right_0 and kp_left1, desc_left_1, kp_right_1 based on good_matches_left0_left1
+    # and we send it to PNP
+
+######## (6) PNP #######
 
 
 

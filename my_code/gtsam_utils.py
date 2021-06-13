@@ -65,7 +65,7 @@ def r0_to_r1_s_t0_to_t1_s_from_values(values):
 
 def serialize_Pose3_values(dir_path, values, frames_idx):
     path = os.path.join(dir_path, 'Pose3_values.pkl')
-    utils.make_avail_path(path)
+    utils.clear_path(path)
     cam_to_world_mats = get_cam_to_world_ext_mats_from_values(values=values) # ndarray
     assert len(cam_to_world_mats) == len(frames_idx)
     d = dict()
@@ -84,6 +84,22 @@ def unserialize_Pose3_values(path):
     return Pose3_values
 
 #### VISUALIZATION ######
+def single_bundle_plots(values, plot_dir, endframe, startframe):
+    # plot 2D view cameras+points
+    plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe)
+    
+    # plot 3D trajectory only cameras
+    gtsam.utils.plot.plot_trajectory(startframe, values)
+    gtsam.utils.plot.set_axes_equal(startframe)
+    plt.savefig(os.path.join(plot_dir, f'3d_cams_{startframe}_{endframe}'), bbox_inches='tight', pad_inches=0)
+
+    # plot 3D trajectory cameras+points
+    gtsam.utils.plot.plot_trajectory(startframe+1, values)
+    gtsam.utils.plot.plot_3d_points(startframe+1, values, linespec='r*')
+    gtsam.utils.plot.set_axes_equal(startframe+1)
+    plt.savefig(os.path.join(plot_dir, f'3d_cams_points_{startframe}_{endframe}'), bbox_inches='tight', pad_inches=0)
+    plt.close('all')
+
 def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe=0):
     dws = get_dws_from_gtsam_values(values)
     landmarks = get_points_from_gtsam_values(values)

@@ -109,12 +109,10 @@ def read_poses_world_to_cam(idx, dataset_path=None):
 
 def read_relative_poses_world_to_cam(idx, dataset_path=None):
     """ from l{idx-1} to to l{idx}"""
-    if dataset_path is None:
-        dataset_path = data_path()
-    left_mats = read_poses_world_to_cam(idx, dataset_path)
+    ext_mats = read_poses_world_to_cam(idx, dataset_path)
     r0_to_r1_s, t0_to_t1_s = [], []
-    for i in range(1, len(left_mats)):
-        r0_to_r1, t0_to_t1 = utils.r0_to_r1_t0_to_t1(l0=left_mats[i-1], l1=left_mats[i])
+    for i in range(1, len(ext_mats)):
+        r0_to_r1, t0_to_t1 = utils.r0_to_r1_t0_to_t1(l0=ext_mats[i-1], l1=ext_mats[i])
         r0_to_r1_s.append(r0_to_r1)
         t0_to_t1_s.append(t0_to_t1)
     r0_to_r1_s = np.array(r0_to_r1_s)

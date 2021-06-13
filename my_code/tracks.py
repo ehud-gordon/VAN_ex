@@ -28,23 +28,21 @@ class Track:
 
 
 class Tracks_DB:
-    def __init__(self, args, td=None, ext_l1s=None):
+    def __init__(self, args, td=None, ext_l1s=None, tracks_frame_of_orig_count=None):
         self.args = args
         self.endframe = args.endframe
+        self.ext_l1s = ext_l1s
+        self.path = None
+        self.tracks_frame_of_orig_count = tracks_frame_of_orig_count if tracks_frame_of_orig_count else []
         if td is None: # tracks dictionary
             self.td = dict() # tracks dict
             self.td[0] = dict()
         else:
-            self.td = td
-        if ext_l1s is None:
-            ext_l1 = np.diag((1,1,1,1))
-            self.ext_l1s = [ext_l1]
-        else:
-            self.ext_l1s = ext_l1s # takes points in l_{i-1} and transforms them to l_i
+            self.td = td        
 
-    def add_frame(self, matches_l0_l1, l1_id, kp_l0, kp_r0, kp_l1, kp_r1, ext_l1, pc_l0_r0, pc_l1_r1):
-        self.ext_l1s.append(ext_l1)
+    def add_frame(self, matches_l0_l1, l1_id, kp_l0, kp_r0, kp_l1, kp_r1, pc_l0_r0, pc_l1_r1):
         l0_id = l1_id-1
+        self.tracks_frame_of_orig_count.append(0)
         self.td[l1_id] = dict()
         trains = [m.trainIdx for m in matches_l0_l1]
         # this is to prevent big problem two different kps in l0 (queries[63,64]=115,116), are matched to same kp in l1 (trains[63:65]=91,91)
@@ -70,6 +68,7 @@ class Tracks_DB:
                     print(f"error1, {new_track_l1}")
                 self.td[l1_id][l1_m_id]= new_track_l1
             else: # create new track
+                self.tracks_frame_of_orig_count[-1] += 1
                 track_id = cam_m_idx_to_track_id(cam_id=l0_id, m_id=l0_m_id)
                 l0_meas = kp_l0[:,l0_m_id]
                 r0_meas = kp_r0[:, l0_m_id]
@@ -105,10 +104,13 @@ class Tracks_DB:
         d['td'] = self.td
         d['args'] = self.args
         d['ext_l1s'] = self.ext_l1s
+        d['tracks_frame_of_orig_count'] = self.tracks_frame_of_orig_count
         path = os.path.join(dir_path,f'stage2_tracks_{self.endframe}{title}.pkl')
-        utils.make_avail_path(path)
+        self.path = path
+        utils.clear_path(path)
         with open(path, 'wb') as handle:
             pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        return path
 
 def cam_m_idx_to_track_id(cam_id, m_id):
     return (cam_id << BITS_TRACKS_PER_IMG) + m_id  # 2050 = 1<<11 + 2
@@ -122,5 +124,7 @@ def read(path):
         with open(path, 'rb') as handle:
             d = pickle.load(handle)
         tracks_db = Tracks_DB(td=d['td'], ext_l1s=d['ext_l1s'],
-                      args=d['args'])
+                              args=d['args'],
+                              tracks_frame_of_orig_count=d['tracks_frame_of_orig_count']
+                              )
         return tracks_db

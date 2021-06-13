@@ -90,23 +90,22 @@ def filter_tracks_db(tracks_path):
     filtered_tracks_db = tracks.Tracks_DB(args=tracks_db.args, ext_l1s=tracks_db.ext_l1s)
     filtered_tracks_db.td[0] = dict()
     endframe = tracks_db.endframe  # 50
-    k, ext_l0, ext_r0 = kitti.read_cameras()  # k=(3,4)
+    k, ext_init_l0_l0, ext_init_li_ri = kitti.read_cameras()  # k=(3,4)
     filtered_tracks_ids = set()
     filtered_tracks_count = 0
     total_tracks = 0
-    filtered_tracks_orig_frame_count = [0]
     for cam_id in range(1, endframe+1):
-        filtered_tracks_orig_frame_count.append(0)
         filtered_tracks_db.td[cam_id] = dict()
-        ext_li = tracks_db.ext_l1s[cam_id]
-        proj_li = k @ ext_li
-        ext_ri = ext_r0 @ ext_li
-        proj_ri = k @ ext_ri
+        ext_l0_li = tracks_db.ext_l1s[cam_id]
+        proj_l0_to_li = k @ ext_l0_li
+        ext_l0_ri = ext_init_li_ri @ ext_l0_li
+        proj_l0_to_ri = k @ ext_l0_ri
+
         for track in tracks_db.get_tracks(cam_id=cam_id):
             total_tracks += 1
             if track.orig_cam_id == cam_id:
                 continue
-            if track.length > 2 and track.id in filtered_tracks_ids:
+            if track.id in filtered_tracks_ids:
                 filtered_tracks_count += 1
                 continue
             l0_meas = np.array([track.left_x, track.left_y])
@@ -114,8 +113,8 @@ def filter_tracks_db(tracks_path):
             track_pc_orig = tracks_db.td[track.orig_cam_id][track.orig_m_id].pc
             track_pc_orig = np.hstack((track_pc_orig, [1]))
             # project orig_pc onto current cameras
-            track_li_proj = proj_li @ track_pc_orig ;track_li_proj = track_li_proj[0:2] / track_li_proj[-1]
-            track_ri_proj = proj_ri @ track_pc_orig; track_ri_proj = track_ri_proj[0:2] / track_ri_proj[-1]
+            track_li_proj = proj_l0_to_li @ track_pc_orig ; track_li_proj = track_li_proj[0:2] / track_li_proj[-1]
+            track_ri_proj = proj_l0_to_ri @ track_pc_orig; track_ri_proj = track_ri_proj[0:2] / track_ri_proj[-1]
             l_diff = np.abs(l0_meas - track_li_proj)
             r_diff = np.abs(r0_meas - track_ri_proj)
             if np.sum(l_diff) > 6 or np.sum(r_diff) > 6:
@@ -124,35 +123,49 @@ def filter_tracks_db(tracks_path):
                 continue
             # add new track
             filtered_tracks_db.td[track.cam_id][track.m_id] = track
-            filtered_tracks_orig_frame_count[-1] += 1
             # check if orig in db, if not - add it as well
             if track.orig_m_id not in filtered_tracks_db.td[track.orig_cam_id]:
                 filtered_tracks_db.td[track.orig_cam_id][track.orig_m_id] = tracks_db.td[track.orig_cam_id][track.orig_m_id]
-                filtered_tracks_orig_frame_count[-2] += 0
+
+    # count frame of origin for tracks
+    filtered_tracks_frame_of_orig_count = []
+    visited_tracks_set = set()
+    for cam_idx in range(0, endframe):
+        filtered_tracks_frame_of_orig_count.append(0)
+        for track in filtered_tracks_db.get_tracks(cam_id=cam_idx):
+            if track.id in visited_tracks_set:
+                continue
+            visited_tracks_set.add(track.id)
+            filtered_tracks_frame_of_orig_count[-1] += 1
+
+
     # count tracks lengths
     visited_tracks_set = set()
     filtered_tracks_length = defaultdict(int)
-    for cam_idx in range(endframe, 0,-1):
-        for track in tracks_db.get_tracks(cam_id=cam_idx):
+    for cam_idx in range(endframe, -1,-1):
+        for track in filtered_tracks_db.get_tracks(cam_id=cam_idx):
             if track.id in visited_tracks_set:
                 continue
             if track.length == 1:
                 print("problem: ",cam_idx, track)
-                z=3
             visited_tracks_set.add(track.id)
             filtered_tracks_length[track.length] += 1
     lengths_counts = sorted(filtered_tracks_length.items(), key=lambda tup: tup[0])
     tracks_lengths, counts = zip(*lengths_counts)
+
     # prints
     pct = filtered_tracks_count / total_tracks
     print(f"filtered {filtered_tracks_count}/{total_tracks}={pct:.2%} tracks")
+    filtered_tracks_path = os.path.join(tracks_dir, tracks_name+'_filterd'+ ext)
     filtered_tracks_db.serialize(dir_path=tracks_dir, title="_filtered")
 
+
     # plots
-    # my_plot.plotly_bar(y=counts, bins=tracks_lengths, title="lengths of filtered_tracks")
-    my_plot.plotly_bar(y=filtered_tracks_orig_frame_count, title=f"filtered_tracks frame of origin {tracks_name}")
+    my_plot.plotly_bar(y=counts, bins=tracks_lengths, title=f"filtered_tracks_lenghts_{tracks_name}", plot_dir=tracks_dir, plot=False)
+    my_plot.plotly_bar(y=filtered_tracks_frame_of_orig_count, title=f"filtered_tracks_frame_of_origin_{tracks_name}", plot_dir=tracks_dir, plot=False)
+    return filtered_tracks_db
 
 
 if __name__=="__main__":
-    tracks_path = r"C:\Users\godin\Documents\VAN_ex\out\06-10-18-20_mine_global_2760\stage2_626.9_114.5\stage2_tracks_2760.pkl"
+    tracks_path = r'C:\Users\godin\Documents\VAN_ex\out\06-12-17-23_mine_global_50\stage2_1.3_1.7\stage2_tracks_50.pkl'
     filter_tracks_db(tracks_path=tracks_path)

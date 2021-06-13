@@ -1,16 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from plotly.offline import plot as plotly_plot
-import plotly
-import plotly.io as pio
 import plotly.graph_objects as go
-import plotly.express as px
 import os
 
-import utils
+from utils import und_title
 
-def und_title(title):
-    return ('_'+title+'_') if title else ""
+############ MATPLOTLIB ############
 
 def plt_diff_trans_vecs(trans_diff, plot_dir,title, idx=None, plot=False, save=True):
     """ :param trans_diff: (3,n)  """
@@ -84,7 +80,7 @@ def plt_2d_cams_compare(my_dws, kitti_dws, plot_dir, title,endframe=0, startfram
     if plot:
         plt.show()
 
-def plt_3d_cams(camera_dws, plot_dir,title, startframe=0, endframe=0, plot=False, save=True):
+def plt_3d_cams(camera_dws, plot_dir, title, startframe=0, endframe=0, plot=False, save=True):
     endframe = camera_dws.shape[1]-1 if not endframe else endframe # 10
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
@@ -99,6 +95,27 @@ def plt_3d_cams(camera_dws, plot_dir,title, startframe=0, endframe=0, plot=False
     plt.title(f"left camera location, {title} in frames [{startframe}-{endframe}]")
     if save:
         path = os.path.join(plot_dir, f'3d_cams{und_title(title)}_{endframe}' + '.png')
+        plt.savefig(path, bbox_inches='tight', pad_inches=0)
+    if plot:
+        plt.show()
+
+def plt_3d_cams_compare(my_dws, kitti_dws, plot_dir, title, endframe=0, startframe=0, plot=False, save=True):
+    endframe = my_dws.shape[1]-1 if not endframe else endframe
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    ax.scatter(my_dws[0], my_dws[2], my_dws[1], color="blue", label="mine")
+    ax.scatter(kitti_dws[0], kitti_dws[2], kitti_dws[1], color="red", label="kitti", alpha=0.4)
+    xmin, ymin, zmin = np.min(my_dws, axis=1)
+    xmax, ymax, zmax = np.max(my_dws, axis=1)
+    ax.set_ylim([0, zmax + 1])  # not a mistake, plt's Y axis is our Z-Axis
+    ax.set_xlim([xmin - 1, xmax + 1])
+    ax.set_zlim([ymin - 1, ymax + 1])  # not a mistake, plt's z-axis is our Y-axis
+    ax.invert_zaxis()  # not a mistake, - plt's z axis is our Y axis
+    ax.set_xlabel('X'); ax.set_ylabel('Z'); ax.set_zlabel('Y')  # not a mistake
+    plt.legend()
+    plt.title(f"Comparing left camera location, {title} in frames [{startframe}-{endframe}]")
+    if save:
+        path = os.path.join(plot_dir, f'3d_cams_comp{und_title(title)}{endframe}' + '.png')
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     if plot:
         plt.show()
@@ -133,7 +150,9 @@ def plt_kp_inlier_matches(kp_l1_inlier_matches,plot_dir, plot, save):
     if plot:
         plt.show()
 
-def plotly_bar(y, bins=None, title="", plot=True, save=False):
+
+############ PLOTLY ############
+def plotly_bar(y, bins=None, title="", plot=True, plot_dir=None):
     if bins is None:
         bins = np.arange(len(y))
     fig = go.Figure(go.Bar(x=bins, y=y))
@@ -141,37 +160,17 @@ def plotly_bar(y, bins=None, title="", plot=True, save=False):
     fig.update_traces(textposition='inside', textfont_size=12)
     fig.update_layout(bargap=0, title_text=title, title_x=0.5, font=dict(size=18))
     fig.update_traces(marker_color='blue', marker_line_color='blue', marker_line_width=1)
-    if save:
-        pass
+    if plot_dir:
+        path = os.path.join(plot_dir, f'bar_{und_title(title)}' + '.html')
+        fig.write_html(path)
     if plot:
         plotly_plot(fig)
     
-def plotly_hist(y, bins=None, title="", density=True, plot=True, save=False):
+def plotly_hist(y, bins=None, title="", density=True, plot=True, plot_dir=None):
     if bins is None:
         bins = np.arange(np.max(y)+2)
     y_hist, bins = np.histogram(y, bins=bins, density=density)
-    plotly_bar(y=y_hist, bins=bins, title=title, plot=plot, save=save)
-
-def plt_3d_cams_compare(my_dws, kitti_dws, plot_dir, title, endframe=0, startframe=0, plot=False, save=True):
-    endframe = my_dws.shape[1]-1 if not endframe else endframe
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    ax.scatter(my_dws[0], my_dws[2], my_dws[1], color="blue", label="mine")
-    ax.scatter(kitti_dws[0], kitti_dws[2], kitti_dws[1], color="red", label="kitti", alpha=0.4)
-    xmin, ymin, zmin = np.min(my_dws, axis=1)
-    xmax, ymax, zmax = np.max(my_dws, axis=1)
-    ax.set_ylim([0, zmax + 1])  # not a mistake, plt's Y axis is our Z-Axis
-    ax.set_xlim([xmin - 1, xmax + 1])
-    ax.set_zlim([ymin - 1, ymax + 1])  # not a mistake, plt's z-axis is our Y-axis
-    ax.invert_zaxis()  # not a mistake, - plt's z axis is our Y axis
-    ax.set_xlabel('X'); ax.set_ylabel('Z'); ax.set_zlabel('Y')  # not a mistake
-    plt.legend()
-    plt.title(f"Comparing left camera location, {title} in frames [{startframe}-{endframe}]")
-    if save:
-        path = os.path.join(plot_dir, f'3d_cams_comp{und_title(title)}{endframe}' + '.png')
-        plt.savefig(path, bbox_inches='tight', pad_inches=0)
-    if plot:
-        plt.show()
+    plotly_bar(y=y_hist, bins=bins, title=title, plot=plot, plot_dir=plot_dir)
 
 def plotly_3d_cams_compare(my_dws, kitti_dws, plot_dir, title, endframe=0, save=True):
     endframe = my_dws.shape[1]-1 if not endframe else endframe

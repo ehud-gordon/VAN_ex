@@ -24,6 +24,10 @@ def get_relative_point_cloud_filter(pc):
     filtered = (x_crit * y_crit) * z_crit
     return filtered
 
+def triang_and_filter(kpA, kpB, k, mA, mB, descA):
+    pc = triang(kpA, kpB, k, mA, mB)
+    return filter_based_on_triang(kpA, descA, kpB, pc)
+
 def filter_based_on_triang(kp_l, desc_l, kp_r, pc):
     filtered = get_relative_point_cloud_filter(pc)
     return kp_l[:,filtered], desc_l[filtered], kp_r[:, filtered], pc[:,filtered]

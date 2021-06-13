@@ -1,15 +1,11 @@
-import re
-import shutil
-
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 
 import os
 from datetime import datetime
-
-FIG_PATH = os.path.join('C:', 'Users', 'godin', 'Documents', 'VAN_ex', 'fig')
-FIG_PATH_WSL = os.path.join(os.sep, 'mnt','c','Users','godin','Documents','VAN_ex', 'fig')
+import re
+import shutil
 
 CYAN_COLOR = (255,255,0) # in BGR
 ORANGE_COLOR = (0, 128,255) # in BGR
@@ -26,12 +22,16 @@ def dir_name_ext(path):
     name, ext = os.path.splitext(base)
     return folder, name, ext
 
-def make_dir(path):
-    if os.path.isdir(path):
+def clear_and_make_dir(path):
+    if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
     os.makedirs(path)
 
-def make_avail_path(path):
+def make_dir_if_needed(path):
+    if not os.path.isdir(path):
+        os.makedirs(path)
+
+def clear_path(path):
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
 
@@ -48,8 +48,8 @@ def out_dir():
     cwd = os.getcwd()
     van_ind = cwd.rfind('VAN_ex')
     base_path = cwd[:van_ind+len('VAN_ex')]
-    fig_path = os.path.join(base_path, 'out')
-    return fig_path
+    res_dir = os.path.join(base_path, 'out')
+    return res_dir
 
 def path_to_linux(path):
     parts = re.split(r'\\', path)
@@ -60,12 +60,35 @@ def path_to_linux(path):
             p = 'c'
         right_parts.append(p)
     return r'/'.join(right_parts)
+
+def path_to_windows(path):
+    parts = re.split(r'/', path)
+    if len(parts) == 1: return path
+    right_parts = []
+    for p in parts[2:]:
+        if p=='c':
+            p = 'C:'
+        right_parts.append(p)
+    return '\\'.join(right_parts)
+
+def path_to_current_os(path):
+    if os.name == 'nt':
+        return path_to_windows(path)
+    elif os.name == "posix":
+        return path_to_linux(path)
+    return path
+
 #########################   Geometry   #########################
+
 def rodrigues_to_mat(rvec,tvec):
     rot, _ = cv2.Rodrigues(src=rvec)
     extrinsic = np.hstack((rot, tvec))
     extrinsic = np.vstack((extrinsic, np.array([0,0,0,1])))
     return extrinsic # (4,4)
+
+def get_dws_from_extrinsics(ext_mats):
+    dws = [get_dw_from_extrinsics(ext_mat) for ext_mat in ext_mats]
+    return np.array(dws).T
 
 def get_dw_from_extrinsics(ext_mat):
     """
@@ -132,9 +155,9 @@ def rot_trans_stats(rot_diffs_relative, trans_diffs_relative, endframe):
     trans_total_error = + tx_error + ty_error + tz_error
     trans_avg_error = trans_total_error / endframe
     stats = [f"sum of relative rotation errors over all {endframe} frames = {rots_total_error:.1f} deg",
-             f"relative rotation error per frame =  {rots_total_error:.1f}/{endframe} = {rot_avg_error:.2f} deg",
-             f"sum of relative translation errors over all {endframe} frames = {trans_total_error:.1f} deg",
-             f"relative translation error per frame =  {trans_total_error:.1f}/{endframe} = {trans_avg_error:.2f} deg",
+             f"avg. relative rotation error per frame =  {rots_total_error:.1f}/{endframe} = {rot_avg_error:.2f} deg",
+             f"sum of relative translation errors over all {endframe} frames = {trans_total_error:.1f} meters",
+             f"avg. relative translation error per frame =  {trans_total_error:.1f}/{endframe} = {trans_avg_error:.2f} meters","\n"
              f"sum of relative translation errors over all {endframe} frames, in x-coordinate {tx_error:.1f} meters",
              f"sum of relative translation errors over all {endframe} frames, in y-coordinate {ty_error:.1f} meters",
              f"sum of relative translation errors over all {endframe} frames, in z-coordinate {tz_error:.1f} meters"]
@@ -142,7 +165,7 @@ def rot_trans_stats(rot_diffs_relative, trans_diffs_relative, endframe):
 
 def get_consistent_with_extrinsic(kp_li, kp_ri, pc_in_l0, ext_l0_li, ext_li_ri, k):
     """
-    filter points thus: we take points in world_left_0, that we know their place in pixels_left_i and pixels_right_i,
+    filter points thus: We take points in world_left_0, that we know their place in pixels_left_i and pixels_right_i,
     and take only those points who're consistent with ext_l0_li. That is, their world-point is projected close
     to both pixels_left_i and pixels_right_i locations.
     :param kp_li/ri: (2,n)
@@ -184,6 +207,32 @@ def filter_with_extrinsic(kp_l1, desc_l1, kp_r1, pc_in_l0, ext_l0_l1, ext_li_ri,
     pc_in_l0 = pc_in_l0[:, inliers_bool]
     return kp_l1, desc_l1, kp_r1, pc_in_l0
 
+def get_rot_trans_diffs(r0_to_r1_s_A, r0_to_r1_s_B, t0_to_t1_s_A, t0_to_t1_s_B):
+    rot_diffs_relative = np.array([rotation_matrices_diff(r, q) for r,q in zip (r0_to_r1_s_A, r0_to_r1_s_B)])
+    trans_diffs_relative = np.abs(t0_to_t1_s_A - t0_to_t1_s_B)
+    return rot_diffs_relative, trans_diffs_relative
+
+def get_rot_trans_diffs_from_ext_mats(ext_l0_to_li_A, ext_l0_to_li_B):
+    r0_to_r1_s_A, t0_to_t1_s_A  = r0_to_r1_s_t0_to_t1_s(ext_l0_to_li_A)
+    r0_to_r1_s_B, t0_to_t1_s_B  = r0_to_r1_s_t0_to_t1_s(ext_l0_to_li_B)
+    return get_rot_trans_diffs(r0_to_r1_s_A, r0_to_r1_s_B, t0_to_t1_s_A, t0_to_t1_s_B)
+
+######################### OTHERS ##################################
+def get_perc_largest_indices(arr, perc):
+    """
+    find indices of the perc largest element in array
+    :param arr: (n,) ndarray of numbers
+    :param perc: number between [0-1], percentage of largest
+    :return: boolean array, with True in place of largest perc
+    """
+    arr_abs = np.abs(arr)
+    size = arr_abs.size
+    num_of_largest = int(size * perc)
+    idx_of_largest = np.argpartition(-arr_abs, num_of_largest)
+    bool_array = np.zeros_like(arr, dtype=bool)
+    bool_array[idx_of_largest[0:num_of_largest]] = True
+
+    return bool_array
 #########################   Visualization   #########################
 def plt_disp_img(img, name, save=False):
     plt.axis('off'); plt.margins(0, 0)
@@ -202,3 +251,7 @@ def cv_disp_img(img, title='', save=False):
         path = os.path.join(out_dir(), title +'.png')
         path = get_avail_path(path)
         cv2.imwrite(path, img)
+
+
+def und_title(title):
+    return ('_'+title+'_') if title else ""

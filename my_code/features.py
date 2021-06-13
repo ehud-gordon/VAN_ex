@@ -1,4 +1,5 @@
 import os
+from itertools import compress
 
 import cv2
 import numpy as np
@@ -9,6 +10,7 @@ import scipy.spatial
 import utils
 from utils import CYAN_COLOR, ORANGE_COLOR
 import kitti
+import my_plot
 
 LOWE_THRESHOLD = 0.7 # threshold to use in knn matching
 
@@ -60,7 +62,7 @@ class Features:
 
         kp = np.concatenate(corrected_kps_list, axis=1)
         desc = np.concatenate(new_descs, axis=0)
-        print(f"num of unmatched kps in all grid:{kp.shape[1]}")
+        print(f"num of kps in all grid:{kp.shape[1]}")
         if self.plot_keypoints:
             kp2 = []
             for (x,y) in kp.T:
@@ -70,7 +72,7 @@ class Features:
 
         return kp, desc
 
-    def kp_desc(self,img, plot_keypoints=True):
+    def kp_desc(self, img, plot_keypoints=False):
         if self.det == "SURF" and self.desc == "SURF":
             surf_feature2d = cv2.xfeatures2d_SURF.create(hessianThreshold=400) # default 100
             kp, desc = surf_feature2d.detectAndCompute(img, None) # SURF needs L2 NORM
@@ -83,6 +85,11 @@ class Features:
             sift = cv2.SIFT_create(contrastThreshold=0.04, edgeThreshold=10) # nfeatures=0
             # sift = cv2.SIFT_create(contrastThreshold=0.03, edgeThreshold=12)  # nfeatures=0
             kp, desc = sift.detectAndCompute(img,None)
+        if self.det == "STAR" and self.desc == "BRIEF":
+            star = cv2.xfeatures2d.StarDetector_create(responseThreshold=10) # def 30,
+            brief = cv2.xfeatures2d.BriefDescriptorExtractor_create()
+            kp = star.detect(img, None)
+            kp, desc = brief.compute(img, kp)
 
         if plot_keypoints:
             img = cv2.drawKeypoints(img, kp, outImage=None, color=(255, 0, 0), flags=0)
@@ -94,9 +101,9 @@ class Features:
 
     def get_kps_desc_stereo_pair(self, idx):
         img_l0, img_r0 = kitti.read_images(idx=idx)
-        return self.get_kps_desc(img0=img_l0, img1=img_r0, stereo_filter=True)
+        return self.get_kps_desc(img0=img_l0, img1=img_r0, is_stereo=True)
 
-    def get_kps_desc(self,img0, img1, stereo_filter):
+    def get_kps_desc(self,img0, img1, is_stereo):
         """   :return: kps and descs of (and only of) good matches """
         if self.feature_grid:
             kp0, desc0 = self.kp_desc_grid(img=img0) # (2,n1), ndarray (n1,32)
@@ -105,15 +112,13 @@ class Features:
             kp0, desc0 = self.kp_desc(img=img0, plot_keypoints=self.plot_keypoints)  # (2,n1), ndarray (n1,32)
             kp1, desc1 = self.kp_desc(img=img1, plot_keypoints=self.plot_keypoints)  # (2,n2), ndarray (n2,32)
 
-        # knn_matches = self.matcher.knnMatch(desc1, desc2,k=2)  # [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
-        # matches = filter_knn_matches(knn_matches=knn_matches, kp1=kp1, kp2=kp2, stereo_filter=stereo_filter)
         matches = self.matcher.match(queryDescriptors=desc0, trainDescriptors=desc1)  # list of matches [DMatch1,... DMatch1N]
-        matches = filter_matches(matches, kp0=kp0, kp1=kp1, stereo_filter=stereo_filter)
+        matches = filter_matches(matches, kp0=kp0, kp1=kp1, is_stereo=is_stereo)
 
         filt_kp0, filt_desc0, filt_kp1  = filter_kp_desc_on_matches(kp0=kp0, kp1=kp1, desc0=desc0, matches=matches)
         if self.plot_matches:
             a = DrawMatchesDouble(img0=img0, img1=img1, kp0=filt_kp0, kp1=filt_kp1)
-            a.draw_matches_double(size=0, save=False, matcher_name=f'{self.matcher_type}_{self.det}_{self.desc}_stereo={stereo_filter}')
+            a.draw_matches_double(size=0, save=False, matcher_name=f'{self.matcher_type}_{self.det}_{self.desc}_stereo={is_stereo}')
         return filt_kp0, filt_desc0, filt_kp1
 
 def filter_kp_desc_on_matches(kp0, kp1, desc0, matches):
@@ -125,37 +130,36 @@ def filter_kp_desc_on_matches(kp0, kp1, desc0, matches):
 
     return filt_kp0, filt_desc0, filt_kp1
 
-def filter_matches(matches, kp0, kp1, stereo_filter, l1_bad_inds=None):
+
+def filter_matches(matches, kp0, kp1, is_stereo):
     good_matches = []
     match_distances = []
     for m in matches:
         y_dist = abs(kp0[1, m.queryIdx] - kp1[1, m.trainIdx])
-        if stereo_filter and (y_dist > utils.MATCH_Y_DIST_MAX):
+        if is_stereo and (y_dist > utils.MATCH_Y_DIST_MAX):
             continue
         match_distances.append(m.distance)
-        if m.distance >= 200:
-            continue
-        if l1_bad_inds and m.queryIdx in l1_bad_inds:
-            continue
         good_matches.append(m)
-    # my_plot.plotly_hist(y=match_distances, title="match distances",density=True, plot=True, save=False)
+    match_distances = np.asarray(match_distances)
+    # my_plot.plotly_hist(y=match_distances, title=f"match distances, is_stereo={is_stereo}",density=True, plot=True, save=False)
+    bool_of_largest = utils.get_perc_largest_indices(match_distances, 0.02)
+    matches = list(compress(good_matches, ~bool_of_largest))
     # plt.hist(match_distances, density=True);plt.show()
-    return good_matches
+    return matches
 
-
-def filter_knn_matches(knn_matches, kp0, kp1, stereo_filter):
+def filter_knn_matches(knn_matches, kp0, kp1, is_stereo):
     """ filter matches based on Lowe's threshold and stereo_constraint,
         and returns good matches
     :param knn_matches: (list of N1 lists [ [DMatch1_1, DMatch1_2], ... , [DMatchN1_1, DMatchN1_2] ]
             matching between kp1 (query) and kp2 (train))
     :param kp0/1: (2,n1/2)] in image 0/1, query/train
-    :param stereo_filter: boolean, whether to filter based on stereo constraint
+    :param is_stereo: boolean, whether to filter based on stereo constraint
     :return: good_matches: [DMatch_1, ..., DMatch_n]
     """
     good_matches = []
     ratio_thresh = LOWE_THRESHOLD
 
-    # if stereo_filter: # count number
+    # if is_stereo: # count number
     #     stereo_lowe = 0
     #     stereo_no_lowe = 0
     #     no_stereo_lowe = 0
@@ -185,9 +189,9 @@ def filter_knn_matches(knn_matches, kp0, kp1, stereo_filter):
         m1, m2 = knn_matches[i]
         if m1.distance < ratio_thresh * m2.distance:
             y_dist = abs(kp0[1, m1.queryIdx] - kp1[1,m1.trainIdx])
-            if stereo_filter and (y_dist > utils.MATCH_Y_DIST_MAX):
+            if is_stereo and (y_dist > utils.MATCH_Y_DIST_MAX):
                 continue
-            # hst.append(m1.distance)
+            hst.append(m1.distance)
             if m1.distance >= 200:
                 continue
             # if m1.distance >=150:
@@ -197,8 +201,6 @@ def filter_knn_matches(knn_matches, kp0, kp1, stereo_filter):
     # plt.hist(hst, density=True);plt.show()
     # distant_kp0 = kp0[:,distant_kp0]; distant_kp1 = kp1[:,distant_kp1]
     return good_matches
-
-
 
 def image_to_grid(img):
     """
@@ -253,12 +255,12 @@ class DrawMatchesDouble:
                 return
             else:
                 self.clear_cons()
-                [self.ax2.add_artist(con) for con in self.cons]
+                [self.ax1.add_artist(con) for con in self.cons]
                 self.curr_cons = self.cons
         if event.key == 'n': # draw only next
             self.clear_cons()
             self.curr_cons = [self.cons[self.con_ind]]
-            self.ax2.add_artist(self.cons[self.con_ind])
+            self.ax1.add_artist(self.cons[self.con_ind])
             self.con_ind  = (self.con_ind + 1) % len(self.cons)
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
@@ -302,7 +304,7 @@ class DrawMatchesDouble:
         self.curr_cons = self.cons
         self.fig.subplots_adjust(left=0.01, bottom=0.19, right=0.99, top=0.94, wspace=0.01, hspace=0.2)
         if save:
-            path = os.path.join(utils.fig_path(), 'tmp', f'matches_{matcher_name}' + '.png')
+            path = os.path.join(utils.out_dir(), f'matches_{matcher_name}' + '.png')
             plt.savefig(path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
