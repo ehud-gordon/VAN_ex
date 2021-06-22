@@ -144,7 +144,7 @@ def get_poses_path_from_dataset_path(dataset_path):
     return poses_path
 
 if __name__=="__main__":
-    np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+    np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
     idx = [0,10,20]
     rots, trans = read_relative_poses_world_to_cam(idx=idx)
     z=3

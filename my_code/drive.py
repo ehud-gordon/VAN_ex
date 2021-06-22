@@ -37,7 +37,7 @@ class Drive:
         
         for l1_idx in range(1, args.endframe+1): # range(1,2761)
             kp_l1, desc_l1, kp_r1 = featurez.get_kps_desc_stereo_pair(l1_idx)
-            kp_l1, desc_l1, kp_r1, _ = triang.triang_and_filter(kp_l1, kp_r1, self.k, self.init_ext_l0_l1, self.ext_li_ri, desc_l1)  # (3,n)
+            kp_l1, desc_l1, kp_r1, pc_l1_r1_rel = triang.triang_and_filter(kp_l1, kp_r1, self.k, self.init_ext_l0_l1, self.ext_li_ri, desc_l1)  # (3,n)
 
             # match l0-l1
             matches_l0_l1 = featurez.matcher.match(desc_l0, desc_l1)  # list of matches [DMatch1,... DMatch1N]
@@ -48,16 +48,17 @@ class Drive:
                 ext_l0_l1 = kitti.read_poses_world_to_cam([l1_idx])[0]  # world_left_0 to world_left_i (camera)
                 ext_inliers_bool = np.ones(len(matches_l0_l1))
             else:
-                pnp.set_with_matches(matches_l0_l1, kp_l0, kp_l1, pc_l0_r0, kp_r1)
+                pnp.set_with_matches(matches_l0_l1, kp_l0, kp_l1, pc_l0_r0, kp_r1) # if pc_l0_r0 is global we'll get ext_l0_li (i.e. global)
                 ext_l0_l1, ext_inliers_bool, proj_errors_to_l1 = pnp.pnp_ransac()  # (4,4), (len(matches)
 
             ext_l0_to_l1_s.append(ext_l0_l1)
             # compute pc_l1_r1
             if args.relative:
                 pc_l1_r1 = triang.triang(kp_l1, kp_r1, self.k, self.init_ext_l0_l1, self.ext_li_ri)  # (3,n)
+                if not np.array_equal(pc_l1_r1, pc_l1_r1_rel):
+                    print(f'not equal {l1_idx}')
             else: # global
                 pc_l1_r1 = triang.triang(kp_l1, kp_r1, self.k, ext_l0_l1, self.ext_li_ri @ ext_l0_l1)  # (3,n)
-                
 
             consistent_matches_l0_l1 = list(compress(matches_l0_l1, ext_inliers_bool))
             if args.store_tracks:
@@ -85,7 +86,7 @@ class Drive:
         frames_idx = list(range(0, args.endframe+1))
         # output important plots and stats
         rots_total_error, trans_total_error = results.output_results(args.out_path, ext_l0_to_l1_s, frames_idx, "stage2",
-                                                                     start_time, plot=args.plot, save=args.save)
+                                                                     start_time, plot=args.plot, save=args.save, relative=args.relative)
         
         # create folder
         stage2_dir =  os.path.join(args.out_path, 'stage2' + f'_{trans_total_error:.1f}_{rots_total_error:.1f}')

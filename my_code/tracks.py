@@ -44,8 +44,8 @@ class Tracks_DB:
         l0_id = l1_id-1
         self.tracks_frame_of_orig_count.append(0)
         self.td[l1_id] = dict()
-        trains = [m.trainIdx for m in matches_l0_l1]
-        # this is to prevent big problem two different kps in l0 (queries[63,64]=115,116), are matched to same kp in l1 (trains[63:65]=91,91)
+        trains = [m.trainIdx for m in matches_l0_l1] #
+        # Below indicates a bug where two different kps in l0 (e.g. queries[63,64]=115,116) are matched to same kp in l1 (trains[63:65]=91,91)
         if np.sum(np.bincount(trains) >= 2) > 0:
             print(f"add_frame({l1_id}) DOUBLE ERROR")
         for m in matches_l0_l1:
@@ -61,8 +61,8 @@ class Tracks_DB:
                 prev_track.next = (l1_id, l1_m_id)
                 track_id = prev_track.id
                 track_length = prev_track.length + 1
-                new_track_l1 = Track(id=track_id, pc=pc_l1, left_meas=l1_meas, right_meas=r1_meas,length=track_length, cam_id=l1_id, m_id=l1_m_id,
-                                               prev=(l0_id, l0_m_id))
+                new_track_l1 = Track(id=track_id, pc=pc_l1, left_meas=l1_meas, right_meas=r1_meas, length=track_length,
+                                     cam_id=l1_id, m_id=l1_m_id, prev=(l0_id, l0_m_id))
                 if l1_m_id in self.td[l1_id]:
                     weird = self.td[l1_id][l1_m_id]
                     print(f"error1, {new_track_l1}")
@@ -125,6 +125,6 @@ def read(path):
             d = pickle.load(handle)
         tracks_db = Tracks_DB(td=d['td'], ext_l1s=d['ext_l1s'],
                               args=d['args'],
-                              tracks_frame_of_orig_count=d['tracks_frame_of_orig_count']
+                              # tracks_frame_of_orig_count=d['tracks_frame_of_orig_count']
                               )
         return tracks_db

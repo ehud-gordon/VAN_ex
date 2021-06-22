@@ -8,7 +8,7 @@ from drive import Drive
 from filter_tracks_db import filter_tracks_db
 import bundle
 
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)

@@ -8,7 +8,7 @@ import utils
 
 import os
 
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 ### VALUES ####
 def get_dws_from_gtsam_values(values):
     Pose3_values = gtsam.utilities.allPose3s(values)
@@ -63,25 +63,35 @@ def r0_to_r1_s_t0_to_t1_s_from_values(values):
     r0_to_r1_s, t0_to_t1_s = utils.r0_to_r1_s_t0_to_t1_s(ext_mats=world_to_cam_mats)
     return r0_to_r1_s, t0_to_t1_s
 
-def serialize_Pose3_values(dir_path, values, frames_idx):
-    path = os.path.join(dir_path, 'Pose3_values.pkl')
-    utils.clear_path(path)
+def serialize_Pose3_marginals(dir_path, values, joint_marginal_cov_mats, relative_cov_mats, frames_idx):
+    path = os.path.join(dir_path, f'Pose3_marginals_{frames_idx[-1]}.pkl')
     cam_to_world_mats = get_cam_to_world_ext_mats_from_values(values=values) # ndarray
     assert len(cam_to_world_mats) == len(frames_idx)
     d = dict()
     d['cam_to_world_mats'] = cam_to_world_mats
+    d['joint_marginal_cov_mats'] = joint_marginal_cov_mats
+    d['relative_cov_mats'] = relative_cov_mats
     d['frames_idx'] = frames_idx
     with open(path, 'wb') as handle:
         pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return path
 
-def unserialize_Pose3_values(path):
-    with open(path, 'rb') as handle:
+def unserialize_Pose3_marginals(pickle_path):
+    with open(pickle_path, 'rb') as handle:
         d = pickle.load(handle)
     cam_to_world_mats = d['cam_to_world_mats']
+    joint_marginal_cov_mats = d['joint_marginal_cov_mats']
+    relative_cov_mats = d['relative_cov_mats']
     frames_idx = d['frames_idx']
+
     Pose3_values = get_Pose3_values_from_cam_to_world_ext_mats(cam_to_world_mats, frames_idx)
-    return Pose3_values
+    return Pose3_values, joint_marginal_cov_mats, relative_cov_mats, frames_idx
+
+if __name__=="__main__":
+    pkl_path = r'C:\Users\godin\Documents\VAN_ex\out\06-13-16-50_mine_global_50\stage3_1.1_10000.2\Pose3_marginals_50.pkl'
+    lp = utils.path_to_current_os(pkl_path)
+    Pose3_values, joint_marginal_cov_mats, relative_cov_mats, frames_idx = unserialize_Pose3_marginals(lp)
+    a=3
 
 #### VISUALIZATION ######
 def single_bundle_plots(values, plot_dir, endframe, startframe):

@@ -3,8 +3,8 @@ import time
 
 import gtsam
 from gtsam.symbol_shorthand import X, P
-from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D, Point3
-from gtsam.utils import plot
+from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D, Point3, KeyVector
+from gtsam.utils import plot as g_plot
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -14,7 +14,7 @@ import os
 import tracks, utils, kitti, my_plot, utils, results
 import gtsam_utils as g_utils
 
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
 class FactorGraphSLAM:
     def __init__(self, tracks_path, tracks_db=None):
@@ -27,6 +27,8 @@ class FactorGraphSLAM:
         self.init_folders()
         self.init_results()
         self.keyframes_idx = list(range(0, self.endframe+1, self.bundle_len-1))
+        self.joint_marginal_cov_mats = []
+        self.relative_cov_mats = []
     
     def init_cams(self):
         self.k, self.ext_l0, self.ext_r0 = kitti.read_cameras() # k=(3,4) ext_l0/r0 (4,4)
@@ -44,7 +46,7 @@ class FactorGraphSLAM:
     def init_results(self):
         self.init_errors, self.final_errors = [], []
         self.stats = ["**Stage3**", "tracks_db args:", str(self.tracks_db.args), self.tracks_path,
-                      'optimizer.error() before optimizer.optimize() and after']
+                      'optimizer.error() before optimizer.optimize() and after', f'bundle_len={self.bundle_len}']
         self.save = True
         self.single_bundle_plots = True
 
@@ -57,9 +59,43 @@ class FactorGraphSLAM:
             lk_to_l0_Pose3 = self.single_bundle(l0_idx=l0_idx)
             Pose3_keyframes.insert(X(endframe), lk_to_l0_Pose3)
         self.output_results(Pose3_keyframes, start_time)
-
     
-    def single_bundle(self, l0_idx):
+    def single_bundle(self, l0_idx): # bundelon
+        graph, initialEstimate = self.build_graph(l0_idx)
+
+        # optimize
+        optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
+        self.init_errors.append(optimizer.error())
+        values = optimizer.optimize()
+        
+        # extract results
+        endframe = l0_idx + self.bundle_len - 1 # 10
+        marginals = gtsam.Marginals(graph, values)
+        pose_l0_idx_to_l0 = values.atPose3(X(l0_idx))
+        pose_l_endframe_t0_l0 = values.atPose3(X(endframe))
+        # pose_l_endframe_to_l0_idx = pose_l0_idx_to_l0.between(pose_l_endframe_t0_l0)
+        keys = KeyVector([X(l0_idx), X(endframe)])
+        joint_covariance_l0idx_l_endframe = marginals.jointMarginalCovariance(keys).fullMatrix() # (12,12) array
+        # joint_information_l0idx_l_endframe = marginals.jointMarginalInformation(keys).fullMatrix() # (12,12) array
+        relatve_info_l_endframe_cond_on_l0_idx = marginals.jointMarginalInformation(keys).at( X(endframe), X(endframe) )
+        relative_cov_l_endframe_cond_on_l0_idx = np.linalg.inv(relatve_info_l_endframe_cond_on_l0_idx)
+        self.joint_marginal_cov_mats.append(joint_covariance_l0idx_l_endframe)
+        self.relative_cov_mats.append(relative_cov_l_endframe_cond_on_l0_idx)
+        pose_x_endframe = values.atPose3(X(endframe))
+        self.final_errors.append(optimizer.error())
+        
+
+        # add stats and plots
+        msg = f'bundle frames [{l0_idx}-{endframe}]: error before: {self.init_errors[-1]:.1f}, after: {self.final_errors[-1]:.1f}'
+        self.stats.append(msg)
+        print(msg)
+        
+        if self.single_bundle_plots:
+            g_utils.single_bundle_plots(values, self.single_bundle_plot_dir, endframe, l0_idx)
+
+        return pose_x_endframe
+    
+    def build_graph(self, l0_idx):
         endframe = l0_idx + self.bundle_len - 1 # 10
         graph = gtsam.NonlinearFactorGraph()
         initialEstimate = gtsam.Values()
@@ -97,23 +133,7 @@ class FactorGraphSLAM:
                 if cam_idx <= max(track.orig_cam_id, l0_idx):
                     pc_li = track.pc
                     initialEstimate.insert( P(track.id), Point3(pc_li))
-
-        # optimize
-        optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
-        self.init_errors.append(optimizer.error())
-        values = optimizer.optimize()
-        self.final_errors.append(optimizer.error())
-        pose_x_endframe = values.atPose3(X(endframe))
-
-        # add stats and plots
-        msg = f'bundle frames [{l0_idx}-{endframe}]: error before: {self.init_errors[-1]:.1f}, after: {self.final_errors[-1]:.1f}'
-        self.stats.append(msg)
-        print(msg)
-        
-        if self.single_bundle_plots:
-            g_utils.single_bundle_plots(values, self.single_bundle_plot_dir, endframe, l0_idx)
-
-        return pose_x_endframe
+        return graph, initialEstimate
     
     def output_results(self, Pose3_keyframes, start_time):
         # output important plots and stats
@@ -122,25 +142,27 @@ class FactorGraphSLAM:
 
         # rename stage3 folder
         new_stage3_dir = self.stage_3_dir + f'_{trans_total_error:.1f}_{rots_total_error:.1f}'
+        new_stage3_dir = utils.get_avail_path(new_stage3_dir) # TODO remove
         os.rename(self.stage_3_dir, new_stage3_dir)
         self.stage_3_dir = new_stage3_dir
         
         # write stats
         with open (os.path.join(self.stage_3_dir,'stats_stage3.txt'), 'w') as f:
             f.writelines('\n'.join(self.stats))
-
+        
         # graph before_after optimization errors
         my_plot.plt_bundle_errors(self.init_errors, self.final_errors, self.stage_3_dir, idx=self.keyframes_idx[1:], plot=False, save=self.save)
 
-        # serialzie Pose3 results
-        g_utils.serialize_Pose3_values(dir_path=self.stage_3_dir, values=Pose3_keyframes, frames_idx=self.keyframes_idx)
+        # serialzie Pose3 and marginals
+        g_utils.serialize_Pose3_marginals(self.stage_3_dir, Pose3_keyframes, self.joint_marginal_cov_mats, self.relative_cov_mats, self.keyframes_idx)
 
 
 if __name__=="__main__":
-    # tracks_path = r'C:\Users\godin\Documents\VAN_ex\out\06-10-15-07_mine_global_50\stage2_1.2_1.7\stage2_tracks_50_filtered.pkl'
-    # tracks_path = r'C:\Users\godin\Documents\VAN_ex\out\06-10-15-09_mine_global_200\stage2_19.1_8.4\stage2_tracks_200_filtered.pkl'
-    # tracks_path = r'C :\Users\godin\Documents\VAN_ex\out\06-10-15-12_mine_global_2760\stage2_622.2_114.9\stage2_tracks_2760_filtered.pkl'
-    tracks_path = r'C:\Users\godin\Documents\VAN_ex\out\06-12-17-23_mine_global_50\stage2_1.3_1.7\stage2_tracks_50_filtered.pkl'
+    tracks_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/06-13-16-50_mine_global_50/stage2_1.3_1.7/stage2_tracks_50_filtered.pkl'
+    # tracks_path =  r'/mnt/c/users/godin/Documents/VAN_ex/out/06-13-12-25_mine_global_500/stage2_57.2_18.6/stage2_tracks_500_filtered.pkl'
+    # tracks_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/06-10-15-12_mine_global_2760/stage2_622.2_114.9/stage2_tracks_2760_filtered.pkl'
+    # tracks_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/06-13-14-30_mine_global_200/stage2_19.0_8.5/stage2_tracks_200_filtered.pkl'
+    
     ba = FactorGraphSLAM(tracks_path=tracks_path)
     ba.main()
     print('bundle end')

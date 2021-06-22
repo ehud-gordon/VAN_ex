@@ -77,7 +77,6 @@ def path_to_current_os(path):
     elif os.name == "posix":
         return path_to_linux(path)
     return path
-
 #########################   Geometry   #########################
 
 def rodrigues_to_mat(rvec,tvec):
@@ -127,6 +126,14 @@ def r0_to_r1_t0_to_t1(l0, l1):
     r0_to_r1 = r1 @ r0.T
     t0_to_t1 = t1 - t0
     return r0_to_r1, t0_to_t1
+def r0_to_r1_s_t0_to_t1_s_from_relative(relative_ext_mats):
+    r0_to_r1_s, t0_to_t1_s = [], []
+    for ext_mat in relative_ext_mats:
+        r0_to_r1, t0_to_t1 = ext_mat[0:3, 0:3], ext_mat[0:3, 3]
+        r0_to_r1_s.append(r0_to_r1)
+        t0_to_t1_s.append(t0_to_t1)
+    t0_to_t1_s = np.array(t0_to_t1_s).T
+    return r0_to_r1_s, t0_to_t1_s
 
 def r0_to_r1_s_t0_to_t1_s(ext_mats):
     r0_to_r1_s, t0_to_t1_s = [], []
@@ -136,6 +143,31 @@ def r0_to_r1_s_t0_to_t1_s(ext_mats):
         t0_to_t1_s.append(t0_to_t1)
     t0_to_t1_s = np.array(t0_to_t1_s).T
     return r0_to_r1_s, t0_to_t1_s
+
+def get_r_t(ext_mat):
+    r = ext_mat[0:3, 0:3]
+    t = ext_mat[0:3,3]
+    return r.astype('float64'),t.astype('float64')
+
+def r_t_to_ext(r,t):
+    mat = np.hstack((r, t.reshape(3,1)))
+    mat = np.vstack((mat, [0,0,0,1]))
+    return mat.astype('float64')
+
+def relative_to_global(relative_ext_mats):
+    """
+    :param relative_ext_mats: get ext_mats (l0_to_l1, l1_to_l2, l2_to_l3, ... l_n-1_to_ln)
+    :return: global ext_mats (l0_to_l1, l0_to_l2, l0_to_l3, ... l0_to_ln)
+    """
+    global_ext_mats = [relative_ext_mats[0]]
+    r0_to_ri, t0_to_ti = get_r_t(relative_ext_mats[0])
+    for li_to_li1 in relative_ext_mats[1:]:
+        ri_to_ri1, ti_to_ti1 = get_r_t(li_to_li1)
+        r0_to_ri = ri_to_ri1 @ r0_to_ri
+        t0_to_ti += ti_to_ti1
+        ext_mat_l0_to_li = r_t_to_ext(r0_to_ri, t0_to_ti)
+        global_ext_mats.append(ext_mat_l0_to_li)
+    return global_ext_mats
 
 def r0_to_r1_s_t0_to_t1_s_2(rot_mats, trans_vecs):
     assert len(rot_mats) == trans_vecs.shape[1]
@@ -165,15 +197,16 @@ def rot_trans_stats(rot_diffs_relative, trans_diffs_relative, endframe):
 
 def get_consistent_with_extrinsic(kp_li, kp_ri, pc_in_l0, ext_l0_li, ext_li_ri, k):
     """
-    filter points thus: We take points in world_left_0, that we know their place in pixels_left_i and pixels_right_i,
-    and take only those points who're consistent with ext_l0_li. That is, their world-point is projected close
-    to both pixels_left_i and pixels_right_i locations.
-    :param kp_li/ri: (2,n)
+    filter points thus: We take 3D points in world_left_0, that we know their pixel locations in pixels_left_i and pixels_right_i,
+    and project them to pixels_left_i and pixels_right_i using ext_l0_li, to get proj_pixels_left_i and proj_pixels_right_i.
+    We then filter, so we keep only those points that're consistent with ext_l0_li. That is, their world-point is projected close
+    to both their pixels_left_i and pixels_right_i locations.
+    :param kp_li/ri: (2,n) ndarray of keypoints in pixels_left_i / pixels_right_i
     :param pc_in_l0: (3,n) points in world_left_0 coordinate system, that we know their kp_li and kp_ri locations.
     :param ext_l0_li: (4,4) extrinsic matrix from world_left_0 to world_left_i
     :param ext_li_ri: (4,4) extrinsic matrix from world_left_i to world_right_i
     :param k: (4,4) intrinsics camera matrix
-    :return inliers_bool - boolean array of
+    :return inliers_bool - boolean ndarray (n,), with True in indices of points that're consistent
     """
     assert kp_li.shape[1] == kp_ri.shape[1] == pc_in_l0.shape[1]
     if pc_in_l0.shape[0] == 3:

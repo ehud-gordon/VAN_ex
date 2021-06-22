@@ -1,4 +1,4 @@
-######## (1) Getting Keypoints and descriptors ########
+######## (1) Getting keypoints and descriptors ########
 
 def get_keypoints_descriptors(img):
     sift = cv2.SIFT_create(contrastThreshold=0.04, edgeThreshold=10) # nfeatures=0

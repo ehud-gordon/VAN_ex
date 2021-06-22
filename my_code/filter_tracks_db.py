@@ -15,7 +15,7 @@ import kitti
 import utils
 import tracks
 import my_plot
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.4g" % x))
+np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
 def eval_tracks_db(tracks_path):
     tracks_db = tracks.read(tracks_path)
