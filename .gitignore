@@ -1,7 +1,7 @@
 __pycache__/
 *.py[cod]
 /data/
-**/stam
+**/stam*
 /.vscode
 /docs/06-13-14-33_mine_global_500_BRIEF_STAR
 /.idea
