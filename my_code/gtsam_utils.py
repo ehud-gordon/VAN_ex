@@ -1,7 +1,9 @@
 import pickle
 
 import gtsam
+from gtsam import KeyVector
 from gtsam.symbol_shorthand import X, P
+from gtsam.utils import plot as g_plot
 import numpy as np
 import matplotlib.pyplot as plt
 import utils
@@ -9,7 +11,7 @@ import utils
 import os
 
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
-### VALUES ####
+#### VALUES ####
 def get_dws_from_gtsam_values(values):
     Pose3_values = gtsam.utilities.allPose3s(values)
     cam_to_world_poses = [values.atPose3(k) for k in Pose3_values.keys()]
@@ -87,11 +89,28 @@ def unserialize_Pose3_marginals(pickle_path):
     Pose3_values = get_Pose3_values_from_cam_to_world_ext_mats(cam_to_world_mats, frames_idx)
     return Pose3_values, joint_marginal_cov_mats, relative_cov_mats, frames_idx
 
-if __name__=="__main__":
-    pkl_path = r'C:\Users\godin\Documents\VAN_ex\out\06-13-16-50_mine_global_50\stage3_1.1_10000.2\Pose3_marginals_50.pkl'
-    lp = utils.path_to_current_os(pkl_path)
-    Pose3_values, joint_marginal_cov_mats, relative_cov_mats, frames_idx = unserialize_Pose3_marginals(lp)
-    a=3
+#### MARGINALS ####
+def relative_cov_li_cond_on_l0(marginals, li_idx, l0_idx):
+    """ return Sigma li|l0 """
+    keys = KeyVector([X(l0_idx), X(li_idx)])
+    relative_info_li_cond_on_l0_idx = marginals.jointMarginalInformation(keys).at( X(li_idx), X(li_idx) )
+    relative_cov_li_cond_on_l0_idx = np.linalg.inv(relative_info_li_cond_on_l0_idx)
+    return relative_cov_li_cond_on_l0_idx
+
+def relative_cov_li_key_cond_on_l0(marginals, li_idx_key, l0_idx):
+    """ return Sigma li|l0 """
+    keys = KeyVector([X(l0_idx), li_idx_key])
+    relative_info_li_cond_on_l0_idx = marginals.jointMarginalInformation(keys).at( li_idx_key, li_idx_key )
+    relative_cov_li_cond_on_l0_idx = np.linalg.inv(relative_info_li_cond_on_l0_idx)
+    return relative_cov_li_cond_on_l0_idx
+
+def cumsum_mats(mats):
+    cumsum_res = [mats[0]]
+    for mat in mats[1:]:
+        res = cumsum_res[-1] + mat
+        cumsum_res.append(res)
+    return cumsum_res
+
 
 #### VISUALIZATION ######
 def single_bundle_plots(values, plot_dir, endframe, startframe):
@@ -108,6 +127,7 @@ def single_bundle_plots(values, plot_dir, endframe, startframe):
     gtsam.utils.plot.plot_3d_points(startframe+1, values, linespec='r*')
     gtsam.utils.plot.set_axes_equal(startframe+1)
     plt.savefig(os.path.join(plot_dir, f'3d_cams_points_{startframe}_{endframe}'), bbox_inches='tight', pad_inches=0)
+    
     plt.close('all')
 
 def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe=0):
@@ -116,8 +136,37 @@ def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe
     plt.figure()
     plt.scatter(x=dws[0], y=dws[2], color="red", marker=(5,2), label="camera")
     plt.scatter(x=landmarks[0], y=landmarks[2], color="blue", label="landmark", alpha=0.2)
-    plt.xlabel('x');plt.ylabel('z')
+    plt.xlabel('x'); plt.ylabel('z')
     plt.title(f"2D cameras and landmarks for keyframes [{startframe}-{endframe}]")
     plt.legend()
     path = os.path.join(plot_dir, f'2d_cams_points_{startframe}_{endframe}' + '.png')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
+
+def my_cond_plot_trajectory(fignum, values, marginals, l0_idx, endframe, plot_dir):
+    fig = plt.figure(fignum)
+    axes = fig.gca(projection='3d')
+
+    axes.set_xlabel("X")
+    axes.set_ylabel("Y")
+    axes.set_zlabel("Z")
+
+    poses = gtsam.utilities.allPose3s(values)
+    for key in poses.keys():
+        pose = poses.atPose3(key)
+        P = relative_cov_li_key_cond_on_l0(marginals, li_idx_key=key, l0_idx=l0_idx)
+        if key == X(l0_idx):
+            g_plot.plot_pose3_on_axes(axes, pose, axis_length=1)
+        else:
+            g_plot.plot_pose3_on_axes(axes, pose, P=P, axis_length=1)
+        if False: # if we only want to plot the ellipses
+            gRp = pose.rotation().matrix()  # rotation from pose to global
+            origin = pose.translation()
+            pPp = P[3:6, 3:6]
+            gPp = gRp @ pPp @ gRp.T
+            g_plot.plot_covariance_ellipse_3d(axes, origin, gPp)
+
+    fig.suptitle(f"conditional variance on {l0_idx}, frames [{l0_idx}-{endframe}]")
+    # g_plot.set_axes_equal(fignum) # dubious
+    path = os.path.join(plot_dir, f'marginal_cov_plot_{l0_idx}_{endframe}')
+    plt.savefig(path, bbox_inches='tight', pad_inches=0)
+    plt.close('all')

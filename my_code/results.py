@@ -6,7 +6,7 @@ import os, time
 import utils, kitti, my_plot
 
 
-def output_results(out_path, ext_l0_to_l1_s, frames_idx,  title, start_time, plot=False, save=True, relative=True):
+def output_results(out_path, ext_l0_to_l1_s, frames_idx,  title, start_time,relative, plot=False, save=True):
     elapsed_time = time.time() - start_time
     # make results dir 
     endframe = frames_idx[-1]
@@ -38,7 +38,8 @@ def output_results(out_path, ext_l0_to_l1_s, frames_idx,  title, start_time, plo
     kitti_dws = kitti.read_dws(idx=frames_idx) # (3,6)
     my_plot.plt_2d_cams_compare(my_dws, kitti_dws, res_dir, title, endframe=endframe, plot=plot, save=save)
     my_plot.plt_3d_cams_compare(my_dws, kitti_dws, res_dir, title, endframe=endframe, plot=plot, save=save)
-    my_plot.plotly_3d_cams_compare(my_dws, kitti_dws, res_dir, title, endframe=endframe, save=save)
+    my_plot.plotly_2d_cams_compare(my_dws, kitti_dws, res_dir, title, frames_idx=frames_idx, save=save)
+    my_plot.plotly_3d_cams_compare(my_dws, kitti_dws, res_dir, title, frames_idx=frames_idx, save=save)
 
      # write stats
     stats.append(f'elapsed: {elapsed_time:.0f} sec, avg_per_frame={elapsed_time/endframe:.1f} sec')

@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from plotly.offline import plot as plotly_plot
+import plotly
 import plotly.graph_objects as go
 import os
 
@@ -164,7 +164,7 @@ def plotly_bar(y, bins=None, title="", plot=True, plot_dir=None):
         path = os.path.join(plot_dir, f'bar_{und_title(title)}' + '.html')
         fig.write_html(path)
     if plot:
-        plotly_plot(fig)
+        plotly.offline.plot(fig)
     
 def plotly_hist(y, bins=None, title="", density=True, plot=True, plot_dir=None):
     if bins is None:
@@ -172,22 +172,117 @@ def plotly_hist(y, bins=None, title="", density=True, plot=True, plot_dir=None):
     y_hist, bins = np.histogram(y, bins=bins, density=density)
     plotly_bar(y=y_hist, bins=bins, title=title, plot=plot, plot_dir=plot_dir)
 
-def plotly_3d_cams_compare(my_dws, kitti_dws, plot_dir, title, endframe=0, save=True):
-    endframe = my_dws.shape[1]-1 if not endframe else endframe
+def plotly_2d_cams_compare(my_dws, kitti_dws, plot_dir, title, save=True, frames_idx=None):
+    num_frames = my_dws.shape[1] # 11
+    frames_idx = frames_idx if frames_idx else np.arange(0,num_frames)  # [0-10]
+    startframe = frames_idx[0] # 0
+    endframe = frames_idx[-1] # 10
+
     fig = go.Figure()
-    my_trace = go.Scatter3d(x=my_dws[0], y=my_dws[2], z=my_dws[1], name="mine", mode='markers', marker=dict(color="red"))
-    kitti_trace = go.Scatter3d(x=kitti_dws[0], y=kitti_dws[2], z=kitti_dws[1], name="kitti", mode='markers', marker=dict(color="blue"))
+
+    # CREATE fixed scatter
+    xm, ym, zm = np.min(my_dws, axis=1) - 1.5; xM, yM, zM = np.max(my_dws, axis=1) + 1.5
+    my_trace = go.Scatter(x=my_dws[0], y=my_dws[2], mode='lines', name="mine", line=dict(color="red"), hovertemplate="x:%{x:.1f}, z:%{y:.1f}")
+    kitti_trace = go.Scatter(x=kitti_dws[0], y=kitti_dws[2], mode='lines', name="kitti", line=dict(color="green"), hovertemplate="x:%{x:.1f}, z:%{y:.1f}")
+    fig.add_traces([my_trace, kitti_trace])
+
+    # create marker scatters
+    for i in range(num_frames):
+        scat = go.Scatter(x=[my_dws[0,i], kitti_dws[0,i]], y=[my_dws[2,i], kitti_dws[2,i]], mode="markers",
+                          marker=dict(color="blue"), name=f'frame={str(frames_idx[i])}', visible=False,
+                          hovertemplate="x:%{x:.1f}" +
+                                        "<br>z:%{y:.1f}" +
+                                        f"<br>frame={str(frames_idx[i])}")
+        fig.add_trace(scat)
+    fig.data[2].visible = True
+
+    # Create and add slider
+    steps = []
+    for i in range(num_frames):
+        vises = [False] * len(fig.data)
+        vises[:2] = [True, True]; vises[i + 2] = True
+        step = dict(method="update", args=[{"visible": vises}], label=f"{frames_idx[i]}")
+        steps.append(step)
+
+    sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
+    fig.update_layout(sliders=sliders)
+
+    fig.update_layout(xaxis=dict(range=[xm, xM], autorange=False, zeroline=False), xaxis_title="X",
+                      yaxis=dict(range=[zm, zM], autorange=False, zeroline=False), yaxis_title="Z")
+
+
+    title1 = f"Comparing left camera location, {title} in frames [{startframe}-{endframe}]"
+    fig.update_layout(title_text=title1, title_x=0.5, font=dict(size=14))
+    if save:
+        path = os.path.join(plot_dir, f'2d_cams_comp_plotly{und_title(title)}{endframe}' + '.html')
+        fig.write_html(path)
+
+def plotly_3d_cams_compare(my_dws, kitti_dws, plot_dir, title, save=True, frames_idx=None):
+    """ :param my_dws / kitti_dws: ndarray (3,n) of my/kitti camera positios (x,y,z)
+    """
+    num_frames = my_dws.shape[1]  # 11
+    frames_idx = frames_idx if frames_idx else np.arange(0, num_frames)  # [0-10]
+    startframe = frames_idx[0]  # 0
+    endframe = frames_idx[-1]  # 10
+
+    # create fixed scatter
+    fig = go.Figure()
+    xm, ym, zm = np.min(my_dws, axis=1) - 1.5; xM, yM, zM = np.max(my_dws, axis=1) + 1.5
+    my_trace = go.Scatter3d(x=my_dws[0], y=my_dws[2], z=my_dws[1], name="mine", mode='lines', marker=dict(color="red"),
+                            hovertemplate="(%{x:.1f}, %{z:.1f}, %{y:.1f})")
+    kitti_trace = go.Scatter3d(x=kitti_dws[0], y=kitti_dws[2], z=kitti_dws[1], name="kitti", mode='lines', marker=dict(color="green"),
+                               hovertemplate="(%{x:.1f}, %{z:.1f}, %{y:.1f})")
     fig.add_traces([my_trace, kitti_trace])
     fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), width=800, height=800)
     fig.update_layout(scene = dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y'))
     fig.update_layout(showlegend=True)
     fig.update_scenes(zaxis_autorange="reversed")
-    title1 = f"Comparing left camera location, {title} in frames [0-{endframe}]"
+    title1 = f"Comparing left camera location, {title} in frames [{startframe}-{endframe}]"
     fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
+
+
+    # create marker scatters
+    for i in range(num_frames):
+        scat = go.Scatter3d(x=[my_dws[0, i], kitti_dws[0, i]],
+                            y=[my_dws[2, i], kitti_dws[2, i]],
+                            z=[my_dws[1, i], kitti_dws[1, i]],
+                            mode="markers",
+                            marker=dict(color="blue"), name=f'frame={str(frames_idx[i])}', visible=False,
+                            hovertemplate="(%{x:.1f},%{z:.1f},%{y:.1f})" +
+                                          f"<br>frame={str(frames_idx[i])}")
+        fig.add_trace(scat)
+    fig.data[2].visible = True
+
+    # Create and add slider
+    steps = []
+    for i in range(num_frames):
+        vises = [False] * len(fig.data)
+        vises[:2] = [True, True]; vises[i + 2] = True
+        step = dict(method="update", args=[{"visible": vises}], label=f"{frames_idx[i]}")
+        steps.append(step)
+
+    sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
+    fig.update_layout(sliders=sliders)
 
     if save:
         path = os.path.join(plot_dir, f'3d_cams_comp_plotly{und_title(title)}{endframe}' + '.html')
         fig.write_html(path)
+
+def plotly_scatter(y, x=None, name="", plot_dir=None,mode='markers', plot=False):
+    scatter = go.Scatter(x=x, y=y, mode=mode)
+    fig = go.Figure(scatter)
+    
+    fig.update_layout(font=dict(size=16))
+    fig.update_layout(title_text=name, title_x=0.5)
+    fig.update_layout(xaxis_title="X", yaxis_title="Y")
+    
+    if plot_dir:
+        path = os.path.join(plot_dir, name+'.html')
+        fig.write_html(path, auto_open=plot)
+    if plot and not plot_dir:
+        plotly.offline.plot(fig)
+
+
 
 def main():
     x = (0, 1, 3, 6, 8)
@@ -221,6 +316,6 @@ if __name__=="__main__":
                            7.638, 8.302, 8.978, 9.662, 10.35, 11.06, 11.8, 12.56, 13.34, 14.12, 14.93, 15.75, 16.58,
                            17.43, 18.29, 19.17, 20.07, 20.99, 21.92, 22.88, 23.85, 24.82, 25.81, 26.79, 27.8, 28.8,
                            29.82, 30.84, 31.87, 32.9, 33.95, 35, 36.07, 37.13, 38.2, 39.28, 40.35, 41.43]])
-    plot_dir = r'C:\Users\godin\Documents\VAN_ex\fig'
-    plotly_3d_cams_compare(my_dws, kitti_dws, plot_dir, save=True, title="Title")
+    plot_dir = os.getcwd()
+    plotly_3d_cams_compare(my_dws, kitti_dws, plot_dir=plot_dir, save=True, title="Title")
 

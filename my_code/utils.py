@@ -78,7 +78,6 @@ def path_to_current_os(path):
         return path_to_linux(path)
     return path
 #########################   Geometry   #########################
-
 def rodrigues_to_mat(rvec,tvec):
     rot, _ = cv2.Rodrigues(src=rvec)
     extrinsic = np.hstack((rot, tvec))
@@ -250,6 +249,27 @@ def get_rot_trans_diffs_from_ext_mats(ext_l0_to_li_A, ext_l0_to_li_B):
     r0_to_r1_s_B, t0_to_t1_s_B  = r0_to_r1_s_t0_to_t1_s(ext_l0_to_li_B)
     return get_rot_trans_diffs(r0_to_r1_s_A, r0_to_r1_s_B, t0_to_t1_s_A, t0_to_t1_s_B)
 
+def rot_mat_2_euler_angles(R):
+    """ returns x,y,z in radians"""
+    sy = np.sqrt(R[0, 0]*R[0, 0] + R[1, 0]*R[1, 0])
+    singular = sy < 1e-6
+    if not singular:
+        x = np.arctan2(R[2, 1], R[2, 2])
+        y = np.arctan2(-R[2, 0], sy)
+        z = np.arctan2(R[1, 0], R[0, 0])
+    else:
+        x = np.arctan2(-R[1, 2], R[1, 1])
+        y = np.arctan2(-R[2, 0], sy)
+        z = 0
+    return np.array([x, y, z])
+
+def t2v(pose):
+    rot_mat = pose.rotation().matrix()
+    rot_in_rads = rot_mat_2_euler_angles(rot_mat)
+    trans = pose.translation()
+    res = np.concatenate((rot_in_rads, trans))
+    return res
+
 ######################### OTHERS ##################################
 def get_perc_largest_indices(arr, perc):
     """
@@ -266,6 +286,9 @@ def get_perc_largest_indices(arr, perc):
     bool_array[idx_of_largest[0:num_of_largest]] = True
 
     return bool_array
+
+def und_title(title):
+    return ('_'+title+'_') if title else ""
 #########################   Visualization   #########################
 def plt_disp_img(img, name, save=False):
     plt.axis('off'); plt.margins(0, 0)
@@ -286,5 +309,4 @@ def cv_disp_img(img, title='', save=False):
         cv2.imwrite(path, img)
 
 
-def und_title(title):
     return ('_'+title+'_') if title else ""

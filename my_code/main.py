@@ -6,7 +6,6 @@ import kitti
 import utils
 from drive import Drive
 from filter_tracks_db import filter_tracks_db
-import bundle
 
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
@@ -38,6 +37,9 @@ if __name__=="__main__":
     args = parse_args()
     drive = Drive(args=args)
     drive.main()
+    exit()
+    import bundle
+
     filtered_tracks_db = filter_tracks_db(drive.tracks_db_path)
     ba = bundle.FactorGraphSLAM(tracks_path=filtered_tracks_db.path, tracks_db=filtered_tracks_db)
     ba.main()
