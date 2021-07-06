@@ -1,26 +1,18 @@
-from collections import defaultdict
-
 import numpy as np
-import matplotlib.pyplot as plt
 from plotly.offline import plot
-import plotly
-import plotly.io as pio
-import plotly.graph_objects as go
 import plotly.express as px
 
-
 import os
+from collections import defaultdict
 
-import kitti
-import utils
-import tracks
-import my_plot
+import kitti, utils, tracks, my_plot
+
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
 def eval_tracks_db(tracks_path):
     tracks_db = tracks.read(tracks_path)
     endframe = tracks_db.endframe  # 50
-    k, ext_l0, ext_r0 = kitti.read_cameras()  # k=(3,4) ext_l0/r0 (4,4)
+    k, ext_id, ext_l_to_r = kitti.read_cameras()  # k=(3,4) ext_l0/r0 (4,4)
     left_x_diff = []; left_y_diff = []
     left_x_diff_baseline = []; left_y_diff_baseline = []
     right_x_diff = []; right_y_diff = []
@@ -31,7 +23,7 @@ def eval_tracks_db(tracks_path):
     for cam_id in range(0, endframe):
         ext_li = kitti.read_poses_world_to_cam([cam_id])[0]
         proj_li = k @ ext_li
-        ext_ri = ext_r0 @ ext_li
+        ext_ri = ext_l_to_r @ ext_li
         proj_ri = k @ ext_ri
         for track in tracks_db.get_tracks(cam_id=cam_id):
             tracks_lengths.append(track.length)
@@ -87,19 +79,20 @@ def filter_tracks_db(tracks_path):
     tracks_dir, tracks_name, ext = utils.dir_name_ext(tracks_path)
     print(f'filtering {tracks_name}')
     tracks_db = tracks.read(tracks_path)
-    filtered_tracks_db = tracks.Tracks_DB(args=tracks_db.args, ext_l1s=tracks_db.ext_l1s)
+    frames_idx = utils.sorted_nums_form_dict_keys(tracks_db.td)
+    filtered_tracks_db = tracks.Tracks_DB(ext_l0_to_li_s=tracks_db.ext_l0_to_li_s)
     filtered_tracks_db.td[0] = dict()
-    endframe = tracks_db.endframe  # 50
-    k, ext_init_l0_l0, ext_init_li_ri = kitti.read_cameras()  # k=(3,4)
+    endframe = frames_idx[-1]  # 50
+    k, ext_id, ext_l_to_r = kitti.read_cameras()  # k=(3,4)
     filtered_tracks_ids = set()
     filtered_tracks_count = 0
     total_tracks = 0
     for cam_id in range(1, endframe+1):
         filtered_tracks_db.td[cam_id] = dict()
-        ext_l0_li = tracks_db.ext_l1s[cam_id]
-        proj_l0_to_li = k @ ext_l0_li
-        ext_l0_ri = ext_init_li_ri @ ext_l0_li
-        proj_l0_to_ri = k @ ext_l0_ri
+        ext_l0_to_li = tracks_db.ext_l0_to_li_s[cam_id]
+        proj_l0_to_li = k @ ext_l0_to_li
+        ext_l0_to_ri = ext_l_to_r @ ext_l0_to_li
+        proj_l0_to_ri = k @ ext_l0_to_ri
 
         for track in tracks_db.get_tracks(cam_id=cam_id):
             total_tracks += 1
@@ -122,7 +115,7 @@ def filter_tracks_db(tracks_path):
                 filtered_tracks_ids.add(track.id)
                 continue
             # add new track
-            filtered_tracks_db.td[track.cam_id][track.m_id] = track
+            filtered_tracks_db.td[track.cam_id][track.match_id] = track
             # check if orig in db, if not - add it as well
             if track.orig_m_id not in filtered_tracks_db.td[track.orig_cam_id]:
                 filtered_tracks_db.td[track.orig_cam_id][track.orig_m_id] = tracks_db.td[track.orig_cam_id][track.orig_m_id]
@@ -157,12 +150,14 @@ def filter_tracks_db(tracks_path):
     pct = filtered_tracks_count / total_tracks
     print(f"filtered {filtered_tracks_count}/{total_tracks}={pct:.2%} tracks")
     filtered_tracks_path = os.path.join(tracks_dir, tracks_name+'_filterd'+ ext)
-    filtered_tracks_db.serialize(dir_path=tracks_dir, title="_filtered")
+    filtered_tracks_db.serialize(dir_path=tracks_dir, title=f"{tracks_name}_filtered")
 
 
     # plots
     my_plot.plotly_bar(y=counts, bins=tracks_lengths, title=f"filtered_tracks_lenghts_{tracks_name}", plot_dir=tracks_dir, plot=False)
     my_plot.plotly_bar(y=filtered_tracks_frame_of_orig_count, title=f"filtered_tracks_frame_of_origin_{tracks_name}", plot_dir=tracks_dir, plot=False)
+    # TODO plot number of active tracks in frame
+    # TODO add david plots for tracks
     return filtered_tracks_db
 
 

@@ -23,3 +23,7 @@ The relative translation error between frames i and j, error(i -> j),  is abs(t_
 and the relative rotation error is as david said in the forom between matrices r_i_j_mine and r_i_j_kitti.
 - In stage2 I compute the relative between every two consecutive frames (0 -> 1, 1 -> 2, ...), and in stage3 I compute relative between every two keyframes (0->10, 10->20, ...)
 - When I write "Error before optimization, after" these are the results of calling optimizer.error() before and after optimizer.optimie()
+
+
+### CORDINATE SYSTEM ###
+In Kitti, WORLD Coordinate-System is Left-0 Coordinate-System.

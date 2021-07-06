@@ -5,101 +5,97 @@ import time
 from itertools import compress
 
 import kitti, features, triang, tracks, utils
-import my_plot, results
-from pnp import PNP
+import my_plot, results, pnp
 
 class Drive:
+
     def __init__(self, args):
         self.dataset_path = args.dataset_path
-        self.k, self.init_ext_l0_l1, self.ext_li_ri = kitti.read_cameras(self.dataset_path) # k=(3,4) ext_l0/r0 (4,4)
-        self.k3 = self.k[:,:3] # (3,3)
-        args.out_path = os.path.join(args.out_dir, utils.get_time_path())
-        args.out_path += ('_kitti' if args.kitti else '_mine') + ( '_relative' if args.relative else '_global') + f'_{args.endframe}'
+        self.k, self.ext_id, self.ext_l_to_r = kitti.read_cameras(self.dataset_path) # k=(3,4) ext_l0/r0 (4,4)
         self.args = args
-
-        if args.store_tracks or args.save or args.plot:
-            utils.clear_and_make_dir(args.out_path)
-
 
     def main(self):
         # init
         args = self.args
-        pnp = PNP(k=self.k, ext_li_ri=self.ext_li_ri)
-        featurez = features.Features(args=args)
-        ext_l0_to_l1_s = [np.diag((1,1,1,1))]
-        self.tracks_db = tracks.Tracks_DB(args=args)
-        kp_l1_inlier_matches = []
+        featurez = features.Features(**vars(args))
+        ext_l0_to_li_s = [np.diag((1,1,1,1))]
+        self.tracks_db = tracks.Tracks_DB()
+        kp_lj_inlier_matches = []
         
-        # match l0-r0, l1-r1
+        # match li-ri
         start_time = time.time()
-        kp_l0, desc_l0, kp_r0 = featurez.get_kps_desc_stereo_pair(idx=0)
-        kp_l0, desc_l0, kp_r0, pc_l0_r0 = triang.triang_and_filter(kp_l0, kp_r0, self.k, self.init_ext_l0_l1, self.ext_li_ri, desc_l0)
-        
-        for l1_idx in range(1, args.endframe+1): # range(1,2761)
-            kp_l1, desc_l1, kp_r1 = featurez.get_kps_desc_stereo_pair(l1_idx)
-            kp_l1, desc_l1, kp_r1, pc_l1_r1_rel = triang.triang_and_filter(kp_l1, kp_r1, self.k, self.init_ext_l0_l1, self.ext_li_ri, desc_l1)  # (3,n)
+        kp_li, desc_li, kp_ri = featurez.get_kps_desc_stereo_pair(idx=0)
+        kp_li, kp_ri, pc_lr_i_in_l0, desc_li = triang.triang_and_rel_filter(kp_li, kp_ri, self.k, self.ext_id, self.ext_l_to_r, desc_li)
 
-            # match l0-l1
-            matches_l0_l1 = featurez.matcher.match(desc_l0, desc_l1)  # list of matches [DMatch1,... DMatch1N]
-            matches_l0_l1 = features.filter_matches(matches_l0_l1, kp_l0, kp_l1, is_stereo=False)
+        for j in range(1, args.endframe+1): # [1,2,...,2760]
+            i=j-1
+            # match lj-rj
+            kp_lj, desc_lj, kp_rj = featurez.get_kps_desc_stereo_pair(j)
+            kp_lj, kp_rj, pc_lr_j_in_lj, desc_lj = triang.triang_and_rel_filter(kp_lj, kp_rj, self.k, self.ext_id, self.ext_l_to_r, desc_lj)  # (3,n)
 
-            # get ext_l0_l1
-            if args.kitti:
-                ext_l0_l1 = kitti.read_poses_world_to_cam([l1_idx])[0]  # world_left_0 to world_left_i (camera)
-                ext_inliers_bool = np.ones(len(matches_l0_l1))
-            else:
-                pnp.set_with_matches(matches_l0_l1, kp_l0, kp_l1, pc_l0_r0, kp_r1) # if pc_l0_r0 is global we'll get ext_l0_li (i.e. global)
-                ext_l0_l1, ext_inliers_bool, proj_errors_to_l1 = pnp.pnp_ransac()  # (4,4), (len(matches)
+            # match li-lj
+            matches_li_lj = featurez.matcher.match(desc_li.T, desc_lj.T)  # list of matches [DMatch1,... DMatch1N]
+            matches_li_lj = features.filter_matches(matches_li_lj, kp_li, kp_lj, is_stereo=False)
 
-            ext_l0_to_l1_s.append(ext_l0_l1)
-            # compute pc_l1_r1
-            if args.relative:
-                pc_l1_r1 = triang.triang(kp_l1, kp_r1, self.k, self.init_ext_l0_l1, self.ext_li_ri)  # (3,n)
-                if not np.array_equal(pc_l1_r1, pc_l1_r1_rel):
-                    print(f'not equal {l1_idx}')
-            else: # global
-                pc_l1_r1 = triang.triang(kp_l1, kp_r1, self.k, ext_l0_l1, self.ext_li_ri @ ext_l0_l1)  # (3,n)
+            # get ext_l0_lj with pnp
+            pc_i_matched, kp_lj_matched, kp_rj_matched = features.filter_with_matches(matches_li_lj, [pc_lr_i_in_l0], [kp_lj, kp_rj])
+            ext_l0_to_lj, ext_inliers_bool, proj_errors_lj, proj_errors_rj = pnp.pnp_ransac(kp_lj_matched, kp_rj_matched,
+                                                                                            pc_i_matched, self.k, self.ext_l_to_r,j)  # (4,4), (len(matches))
+            ext_l0_to_li_s.append(ext_l0_to_lj)
+            pnp_inliers_matches_li_lj = list(compress(matches_li_lj, ext_inliers_bool))
 
-            consistent_matches_l0_l1 = list(compress(matches_l0_l1, ext_inliers_bool))
+            # TODO below is doing additional rel_then_quant filtering on inliers. send quant_matches instead of pnp_inliers
+            # pc_i_pnp_inliers = pc_i_matched[:,ext_inliers_bool]
+            # quant_filter = triang.get_quantile_point_cloud_filter(pc_i_pnp_inliers)
+            # quant_matches_li_lj = list(compress(pnp_inliers_matches_li_lj, quant_filter))
+
+            # compute pc_lj_rj
+            # pc_lr_j_in_l0 below is in WORLD (Left0) CS.
+            pc_lr_j_in_l0 = triang.triang(kp_lj, kp_rj, self.k, ext_l0_to_lj, self.ext_l_to_r @ ext_l0_to_lj)  # (3,n)
+            # TODO maybe I should futrther filter matches_li_lj using the triang above?
+            # TODO make sure it'll work with my tracks matching system!!
+            
             if args.store_tracks:
-                self.tracks_db.add_frame(matches_l0_l1=consistent_matches_l0_l1, l1_id=l1_idx,
-                                    kp_l0=kp_l0, kp_r0=kp_r0, kp_l1=kp_l1, kp_r1=kp_r1,
-                                    pc_l0_r0=pc_l0_r0, pc_l1_r1=pc_l1_r1)
+                self.tracks_db.add_frame(pnp_inliers_matches_li_lj, i,j,
+                                    kp_li, kp_ri, kp_lj, kp_rj,
+                                    pc_lr_i_in_l0, pc_lr_j_in_l0)
 
             # used for visualization
-            kp_l1_inlier_matches.append((kp_l1.shape[1], sum(ext_inliers_bool), len(matches_l0_l1)))
+            kp_lj_inlier_matches.append( (kp_lj.shape[1], sum(ext_inliers_bool), len(matches_li_lj)) )
 
-            kp_l0 = kp_l1
-            kp_r0 = kp_r1
-            desc_l0 = desc_l1
-            pc_l0_r0 = pc_l1_r1
-            if l1_idx % 20 == 0:
-                print(f'finished frame {l1_idx}')
+            kp_li = kp_lj
+            kp_ri = kp_rj
+            desc_li = desc_lj
+            pc_lr_i_in_l0 = pc_lr_j_in_l0
+            if j % 20 == 0:
+                print(f'finished frame {j}')
         
-        self.tracks_db.ext_l1s = ext_l0_to_l1_s
-        if args.save or args.plot or args.store_tracks:
-            self.output_results(kp_l1_inlier_matches, ext_l0_to_l1_s, self.tracks_db, start_time)
+        self.tracks_db.ext_l0_to_li_s = ext_l0_to_li_s
+        
+        self.output_results(kp_lj_inlier_matches, ext_l0_to_li_s, self.tracks_db, start_time)
 
     
-    def output_results(self, kp_l1_inlier_matches, ext_l0_to_l1_s, tracks_db, start_time):
+    def output_results(self, kp_lj_inlier_matches, ext_l0_to_li_s, tracks_db, start_time):
+
         args = self.args
         frames_idx = list(range(0, args.endframe+1))
+        ext_li_to_l0_s = utils.inv_extrinsics_mult(ext_l0_to_li_s)
         # output important plots and stats
-        rots_total_error, trans_total_error = results.output_results(args.out_path, ext_l0_to_l1_s, frames_idx, "stage2",
+        rots_total_error, trans_total_error = results.output_results(args.out_path, ext_li_to_l0_s, frames_idx, "stage2",
                                                                      start_time, plot=args.plot, save=args.save, relative=args.relative)
         
         # create folder
-        stage2_dir =  os.path.join(args.out_path, 'stage2' + f'_{trans_total_error:.1f}_{rots_total_error:.1f}')
-        os.makedirs(stage2_dir)
-        self.tracks_db_path = os.path.join(stage2_dir, f'stage2_tracks_{args.endframe}.pkl')
+        args.stage2_dir =  os.path.join(args.out_path, 'stage2' + f'_{trans_total_error:.1f}_{rots_total_error:.1f}')
+        os.makedirs(args.stage2_dir)
 
-        # serialzie tracks
+        # serialize tracks and ext
         if args.store_tracks:
-            tracks_db.serialize(dir_path=stage2_dir)
+            self.stage2_tracks_path = tracks_db.serialize(dir_path=args.stage2_dir, title=f'stage2_tracks_{args.endframe}')
+        utils.serialize_ext_l0_to_li_s(args.stage2_dir, ext_l0_to_li_s, title=f'stage2_{args.endframe}')
 
         # write stats
         stats = ['**STAGE2**', str(args)]
-        with open (os.path.join(stage2_dir ,'stats_stage2.txt'), 'w') as f:
+        with open (os.path.join(args.stage2_dir ,'stats_stage2.txt'), 'w') as f:
             f.writelines('\n'.join(stats))
         
-        my_plot.plt_kp_inlier_matches(kp_l1_inlier_matches,stage2_dir, plot=args.plot, save=args.save)
+        my_plot.plt_kp_inlier_matches(kp_lj_inlier_matches, args.stage2_dir, plot=args.plot)

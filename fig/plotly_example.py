@@ -8,6 +8,12 @@ def plotly_write_html(fig, name="tmp", auto_open=False):
 def plotly_offline(fig):
     plotly.offline.plot(fig)
 
+############## JSON ###############
+def write_json(fig, name):
+    fig.write_json(name +'.JSON')
+def read_json(path):
+    fig = plotly.io.read_json(path)
+    return fig
 ########### EXAMPLES ###########
 def frames_example():
     # CREATE fixed scatter
@@ -64,8 +70,7 @@ def slider_example():
     steps = []
     for i in range(1, len(fig.data)):
         vises = [False] * len(fig.data)
-        vises[0] = True;
-        vises[i] = True
+        vises[0] = True; vises[i] = True
         step = dict(
             method="update",
             args=[{"visible": vises},
@@ -92,10 +97,10 @@ def slider_example():
 
 if __name__=="__main__":
     import plotly.graph_objects as go
-    fig = go.Figure()
-    scatter1 = go.Scatter(x=[2, 3], y=[2, 3], mode='lines', name="scatter1", line=dict(color="red"))
-    scatter2 = go.Scatter(x=[0, 1], y=[0, 2], mode='markers', name="scatter2", marker=dict(color="blue", size=10))
-    fig.add_traces([scatter1, scatter2])
+    
+    scatter1 = go.Scatter(x=[2, 3], y=[2, 3], mode='lines', name="scatter1", line=dict(color="red"), marker=dict(color="green")  )
+    scatter2 = go.Scatter(x=[0, 1], y=[0, 2], mode='markers', name="scatter2", marker=dict(color="blue"), line=dict(color="yellow")  )
+    fig = go.Figure([scatter1, scatter2])
 
     fig.update_layout(font=dict(size=18))
     fig.update_layout(title_text="my_title", title_x=0.5)
@@ -103,4 +108,5 @@ if __name__=="__main__":
     # fig.update_layout(xaxis_range=[-4,4], yaxis_range=[-4,4])
 
     # fig = go.Figure(data=go.Scatter(x=[0, 1, 2], y=[5, 10, 15], mode='markers'))
-    fig.write_html("tmp.html", auto_open=True)
+    fig.write_html("tmp.html", auto_open=False)
+    # plotly.offline.plot(fig)

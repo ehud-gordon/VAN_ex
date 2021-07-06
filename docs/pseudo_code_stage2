@@ -66,7 +66,7 @@ def simple_triangulation_filtering(kp_left, desc_left, kp_right):
     temp_pc_4d = cv2.triangulatePoints(proj_left, proj_right, keypoints_left, keypoints_right)  # ndarray (4,n)
     temp_pc_3d = temp_pc_4d[0:3] / temp_pc_4d[-1]  # ndarray (3,n)
 
-    filter_bool = get_relative_point_cloud_filter(temp_pc_3d)
+    filter_bool = get_quantile_point_cloud_filter(temp_pc_3d)
     keypoints_left_filtered = keypoints_left[:, filter_bool]
     keypoints_right_filtered = keypoints_right[:, filter_bool]
     descriptors_left_filtered = descriptors_left[filter_bool, :]

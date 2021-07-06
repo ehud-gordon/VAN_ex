@@ -1,25 +1,24 @@
-import pickle
-
 import gtsam
-from gtsam import KeyVector
-from gtsam.symbol_shorthand import X, P
+from gtsam import KeyVector, Pose3
+from gtsam.symbol_shorthand import X
 from gtsam.utils import plot as g_plot
 import numpy as np
 import matplotlib.pyplot as plt
+
+import os, pickle
+
 import utils
 
-import os
-
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
-#### VALUES ####
-def get_dws_from_gtsam_values(values):
-    Pose3_values = gtsam.utilities.allPose3s(values)
-    cam_to_world_poses = [values.atPose3(k) for k in Pose3_values.keys()]
-    cam_to_world_trans = [pose.translation() for pose in cam_to_world_poses]
-    cam_to_world_trans = np.array(cam_to_world_trans).T
-    return cam_to_world_trans
 
-def get_points_from_gtsam_values(values):
+#### GEOMETRY ####
+def dws_from_gtsam_values(Pose3_cam_to_world_values):
+    """ return dws: (3,n) location of cameras in world coordinates"""
+    rot_trans_arr = gtsam.utilities.extractPose3(Pose3_cam_to_world_values)
+    dws = rot_trans_arr[:,-3:].T
+    return dws
+
+def points_from_gtsam_values(values):
     points = []
     for k in values.keys():
         try:
@@ -30,79 +29,72 @@ def get_points_from_gtsam_values(values):
     points = np.array(points).T
     return points
 
-def get_cam_to_world_ext_mats_from_values(values):
+def ext_ci_to_c0_s_from_values(Pose3_ci_to_c0_values):
+    # Miraculously, this in order
+    Pose3_ci_to_c0_s = gtsam.utilities.allPose3s(Pose3_ci_to_c0_values)
+    ext_ci_to_c0_s = [Pose3_ci_to_c0_values.atPose3(k).matrix() for k in Pose3_ci_to_c0_s.keys()]
+    return ext_ci_to_c0_s
+
+def Pose3_ci_to_c0_s_from_ext_ci_to_c0_s(ext_ci_to_c0_s, frames_idx):
+    assert len(ext_ci_to_c0_s) == len(frames_idx)
+    Pose3_ci_to_c0_s = gtsam.Values()
+    for ext_ci_to_c0, frame_idx in zip(ext_ci_to_c0_s, frames_idx):
+        Pose3_ci_to_c0_s.insert( X(frame_idx), gtsam.Pose3(ext_ci_to_c0) )
+    return Pose3_ci_to_c0_s
+
+def ext_c0_to_ci_s_from_values(values):
     Pose3_values = gtsam.utilities.allPose3s(values)
-    cam_to_world_poses = [values.atPose3(k) for k in Pose3_values.keys()]
-    cam_to_world_mats = [pose.matrix() for pose in cam_to_world_poses]
-    return cam_to_world_mats
+    Pose3_ci_to_c0_s = [values.atPose3(k) for k in Pose3_values.keys()]
+    ext_c0_to_ci_s = [pose.inverse().matrix() for pose in Pose3_ci_to_c0_s]
+    return ext_c0_to_ci_s
 
-def get_Pose3_values_from_cam_to_world_ext_mats(ext_mats, frames_idx):
-    assert len(ext_mats) == len(frames_idx)
-    Pose3_values = gtsam.Values()
-    for mat, frame_idx in zip(ext_mats, frames_idx):
-        cur_Pose3 = gtsam.Pose3(mat)
-        Pose3_values.insert(X(frame_idx), cur_Pose3)
-    return Pose3_values
+def t2v(pose3):
+    rot_mat = pose3.rotation().matrix()    
+    trans = pose3.translation()
+    return utils.t2v(rot_mat, trans)
 
-def get_world_to_cam_rot_trans_from_values(values):
-    Pose3_values = gtsam.utilities.allPose3s(values)
-    cam_to_world_poses = [values.atPose3(k) for k in Pose3_values.keys()]
-    world_to_cam_poses = [pose.inverse() for pose in cam_to_world_poses]
-    world_to_cam_rots = np.array([pose.rotation().matrix() for pose in world_to_cam_poses])
-    world_to_cam_trans_vecs = [pose.translation() for pose in world_to_cam_poses]
-    world_to_cam_trans_vecs = np.array(world_to_cam_trans_vecs).T
-    return world_to_cam_rots, world_to_cam_trans_vecs
+def Pose3_cn_to_ci(Pose3_cn_to_c0, Pose3_ci_to_c0):
+    ext_ci_to_c0 = Pose3_ci_to_c0.matrix()
+    ext_cn_to_c0 = Pose3_cn_to_c0.matrix()
+    ext_cn_to_ci = utils.B_to_A_mat(ext_ci_to_c0, ext_cn_to_c0)
+    Pose3_cn_to_ci = Pose3(ext_cn_to_ci)
+    return Pose3_cn_to_ci
 
-def get_world_to_cam_ext_from_values(values):
-    Pose3_values = gtsam.utilities.allPose3s(values)
-    cam_to_world_poses = [values.atPose3(k) for k in Pose3_values.keys()]
-    world_to_cam_poses = [pose.inverse() for pose in cam_to_world_poses]
-    world_to_cam_exts = [pose.matrix() for pose in world_to_cam_poses]
-    return world_to_cam_exts
+def rot_trans_norm_from_Pose3(pose):
+    rot = pose.rotation().matrix()
+    trans = pose.translation()
+    return utils.rot_trans_norm(rot, trans)
 
-def r0_to_r1_s_t0_to_t1_s_from_values(values):
-    world_to_cam_mats = get_world_to_cam_ext_from_values(values)
-    r0_to_r1_s, t0_to_t1_s = utils.r0_to_r1_s_t0_to_t1_s(ext_mats=world_to_cam_mats)
-    return r0_to_r1_s, t0_to_t1_s
-
-def serialize_Pose3_marginals(dir_path, values, joint_marginal_cov_mats, relative_cov_mats, frames_idx):
-    path = os.path.join(dir_path, f'Pose3_marginals_{frames_idx[-1]}.pkl')
-    cam_to_world_mats = get_cam_to_world_ext_mats_from_values(values=values) # ndarray
-    assert len(cam_to_world_mats) == len(frames_idx)
-    d = dict()
-    d['cam_to_world_mats'] = cam_to_world_mats
-    d['joint_marginal_cov_mats'] = joint_marginal_cov_mats
-    d['relative_cov_mats'] = relative_cov_mats
-    d['frames_idx'] = frames_idx
-    with open(path, 'wb') as handle:
-        pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    return path
-
-def unserialize_Pose3_marginals(pickle_path):
-    with open(pickle_path, 'rb') as handle:
-        d = pickle.load(handle)
-    cam_to_world_mats = d['cam_to_world_mats']
-    joint_marginal_cov_mats = d['joint_marginal_cov_mats']
-    relative_cov_mats = d['relative_cov_mats']
-    frames_idx = d['frames_idx']
-
-    Pose3_values = get_Pose3_values_from_cam_to_world_ext_mats(cam_to_world_mats, frames_idx)
-    return Pose3_values, joint_marginal_cov_mats, relative_cov_mats, frames_idx
+def get_gt_k(k, ext_l_to_r):
+    fx, skew, cx, _, fy, cy = k[0:2, 0:3].flatten()
+    baseline = ext_l_to_r[0, 3]
+    gt_k = gtsam.Cal3_S2Stereo(fx, fy, skew, cx, cy, -baseline)
+    return gt_k
 
 #### MARGINALS ####
-def relative_cov_li_cond_on_l0(marginals, li_idx, l0_idx):
-    """ return Sigma li|l0 """
-    keys = KeyVector([X(l0_idx), X(li_idx)])
-    relative_info_li_cond_on_l0_idx = marginals.jointMarginalInformation(keys).at( X(li_idx), X(li_idx) )
-    relative_cov_li_cond_on_l0_idx = np.linalg.inv(relative_info_li_cond_on_l0_idx)
-    return relative_cov_li_cond_on_l0_idx
+def cov_ln_cond_on_li(marginals, n_frame, i_frame): # 20, 10
+    """ return Sigma n|i """
+    keys = KeyVector([X(i_frame), X(n_frame)])
+    ln_cond_on_li_idx_info = marginals.jointMarginalInformation(keys).at( X(n_frame), X(i_frame) )
+    ln_cond_on_li_idx_cov = np.linalg.inv(ln_cond_on_li_idx_info)
+    return ln_cond_on_li_idx_cov
 
-def relative_cov_li_key_cond_on_l0(marginals, li_idx_key, l0_idx):
+def cov_ln_key_cond_on_li(marginals, ln_idx_key, li_idx):
     """ return Sigma li|l0 """
-    keys = KeyVector([X(l0_idx), li_idx_key])
-    relative_info_li_cond_on_l0_idx = marginals.jointMarginalInformation(keys).at( li_idx_key, li_idx_key )
-    relative_cov_li_cond_on_l0_idx = np.linalg.inv(relative_info_li_cond_on_l0_idx)
-    return relative_cov_li_cond_on_l0_idx
+    keys = KeyVector( [X(li_idx), ln_idx_key] )
+    ln_cond_on_li_info = marginals.jointMarginalInformation(keys).at( ln_idx_key, ln_idx_key )
+    ln_cond_on_li_cov = np.linalg.inv(ln_cond_on_li_info)
+    return ln_cond_on_li_cov
+
+def cov_lj_cond_on_li_s(marginals, frames_idx):
+    cov_lj_cond_on_li_s = []
+    for j_kf, i_kf in zip (frames_idx[1:], frames_idx[:-1]):
+        cov_lj_cond_on_li = cov_ln_cond_on_li(marginals, j_kf, i_kf)
+        cov_lj_cond_on_li_s.append(cov_lj_cond_on_li)
+    cov_li_cond_l0_cumsum = cumsum_mats(cov_lj_cond_on_li_s)
+    cov_li_cond_l0_cumsum.insert(0, np.zeros((6,6))) # (277,) a[i]= Sigma_i|0
+    
+    return cov_lj_cond_on_li_s, cov_li_cond_l0_cumsum
 
 def cumsum_mats(mats):
     cumsum_res = [mats[0]]
@@ -111,9 +103,30 @@ def cumsum_mats(mats):
         cumsum_res.append(res)
     return cumsum_res
 
+#### PICKLE ####
+def serialize_bundle(dir_path, Pose3_li_to_l0_keyframes, cov_lj_cond_li_keyframes, keyframes_idx, title):
+    path = os.path.join(dir_path, f'{title}_Pose3_marginals_{keyframes_idx[-1]}.pkl')
+    ext_li_to_l0_s = ext_ci_to_c0_s_from_values(Pose3_li_to_l0_keyframes)
+    assert len(ext_li_to_l0_s) == len(keyframes_idx)
+    d = dict()
+    d['ext_li_to_l0_s'] = ext_li_to_l0_s
+    d['cov_lj_cond_li_keyframes'] = cov_lj_cond_li_keyframes
+    d['keyframes_idx'] = keyframes_idx
+    with open(path, 'wb') as handle:
+        pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    return path
+
+def unserialize_bundle(pickle_path):
+    with open(pickle_path, 'rb') as handle:
+        d = pickle.load(handle)
+    ext_li_to_l0_s = d['ext_li_to_l0_s']
+    cov_lj_cond_li_keyframes = d['cov_lj_cond_li_keyframes']
+    keyframes_idx = d['keyframes_idx']
+    Pose3_li_to_l0_s = Pose3_ci_to_c0_s_from_ext_ci_to_c0_s(ext_li_to_l0_s, keyframes_idx)
+    return Pose3_li_to_l0_s, cov_lj_cond_li_keyframes, keyframes_idx
 
 #### VISUALIZATION ######
-def single_bundle_plots(values, plot_dir, endframe, startframe):
+def single_bundle_plots(values, plot_dir, startframe, endframe):
     # plot 2D view cameras+points
     plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe)
     
@@ -131,8 +144,8 @@ def single_bundle_plots(values, plot_dir, endframe, startframe):
     plt.close('all')
 
 def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe=0):
-    dws = get_dws_from_gtsam_values(values)
-    landmarks = get_points_from_gtsam_values(values)
+    dws = dws_from_gtsam_values(values)
+    landmarks = points_from_gtsam_values(values)
     plt.figure()
     plt.scatter(x=dws[0], y=dws[2], color="red", marker=(5,2), label="camera")
     plt.scatter(x=landmarks[0], y=landmarks[2], color="blue", label="landmark", alpha=0.2)
@@ -142,7 +155,7 @@ def plot_2d_cams_points_from_gtsam_values(values, plot_dir, endframe, startframe
     path = os.path.join(plot_dir, f'2d_cams_points_{startframe}_{endframe}' + '.png')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
 
-def my_cond_plot_trajectory(fignum, values, marginals, l0_idx, endframe, plot_dir):
+def my_cond_plot_trajectory(fignum, values, marginals, startframe, endframe, plot_dir):
     fig = plt.figure(fignum)
     axes = fig.gca(projection='3d')
 
@@ -153,8 +166,8 @@ def my_cond_plot_trajectory(fignum, values, marginals, l0_idx, endframe, plot_di
     poses = gtsam.utilities.allPose3s(values)
     for key in poses.keys():
         pose = poses.atPose3(key)
-        P = relative_cov_li_key_cond_on_l0(marginals, li_idx_key=key, l0_idx=l0_idx)
-        if key == X(l0_idx):
+        P = cov_ln_key_cond_on_li(marginals, ln_idx_key=key, li_idx=startframe)
+        if key == X(startframe):
             g_plot.plot_pose3_on_axes(axes, pose, axis_length=1)
         else:
             g_plot.plot_pose3_on_axes(axes, pose, P=P, axis_length=1)
@@ -165,8 +178,8 @@ def my_cond_plot_trajectory(fignum, values, marginals, l0_idx, endframe, plot_di
             gPp = gRp @ pPp @ gRp.T
             g_plot.plot_covariance_ellipse_3d(axes, origin, gPp)
 
-    fig.suptitle(f"conditional variance on {l0_idx}, frames [{l0_idx}-{endframe}]")
+    fig.suptitle(f"ellipses of covariance conditional on {startframe}, frames [{startframe}-{endframe}]")
     # g_plot.set_axes_equal(fignum) # dubious
-    path = os.path.join(plot_dir, f'marginal_cov_plot_{l0_idx}_{endframe}')
+    path = os.path.join(plot_dir, f'marginal_cov_plot_{startframe}_{endframe}')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.close('all')

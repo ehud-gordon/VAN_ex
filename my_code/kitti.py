@@ -4,12 +4,13 @@ import numpy as np
 import re
 import glob
 import utils
-
+np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
 DATASET_5_PATH = os.path.join('C:','Users', 'godin','Documents','VAN_ex','data','dataset05')
 DATASET_5_PATH_WSL = os.path.join(os.sep, 'mnt','c','Users','godin','Documents','VAN_ex','data','dataset05')
 IMAGES_05_PATH = os.path.join(DATASET_5_PATH, 'sequences', '05')
 POSES_05_TXT = os.path.join(DATASET_5_PATH, 'poses','05.txt')
+
 
 def data_path():
     cwd = os.getcwd()
@@ -39,10 +40,22 @@ def read_images(idx, dataset_path=None, color_mode=cv2.IMREAD_GRAYSCALE):
     img2 = cv2.imread(os.path.join(images_path, 'image_1', img_name), color_mode)  # right image
     return img1, img2
 
+def get_images_path_from_dataset_path(dataset_path):
+    base = os.path.basename(dataset_path) # dataset05
+    seq_num = re.search(r"[0-9]+", base).group(0) # 05
+    images_path = os.path.join(dataset_path, 'sequences', str(seq_num))
+    return images_path
+
+def get_poses_path_from_dataset_path(dataset_path):
+    base = os.path.basename(dataset_path) # dataset05
+    seq_num = str(re.search(r"[0-9]+", base).group(0)) # 05
+    poses_path = os.path.join(dataset_path, 'poses', seq_num+'.txt')
+    return poses_path
+
 def read_cameras(dataset_path=None):
-    """:return: k - intrinsic matrix (shared by both cameras), np.array 3x3
-             m1 - extrinstic camera matrix [R|t] of left camera, np.array 3x4
-             m2 - extrinstic camera matrix [R|t] of right camera, np.array 3x4
+    """:return: k - intrinsic matrix (shared by both cameras), (3,3)
+             m1 - extrinstic camera matrix [R|t] of left camera (3,4). With kitti this identity
+             m2 - extrinstic camera matrix [R|t] of right camera, (3,4)
              to get camera matrix (P1), compute k @ m1  """
     # read camera matrices
     if dataset_path is None:
@@ -54,20 +67,22 @@ def read_cameras(dataset_path=None):
     p1 = np.array([float(i) for i in l1]).reshape(3,4)
     p2 = np.array([float(i) for i in l2]).reshape(3,4)
     k = p1[:, :3]
-    m1 = np.linalg.inv(k) @ p1
-    m2 = np.linalg.inv(k) @ p2
+    m1 = np.linalg.inv(k) @ p1 # with kitti, this is diag(1,1,1)
+    m2 = np.linalg.inv(k) @ p2 # this is l_to_r
     k = np.hstack((k, np.zeros((3,1)))) # (3,4)
     m1 = np.vstack((m1, np.array([0,0,0,1]))) # (4,4)
     m2 = np.vstack((m2, np.array([0, 0, 0, 1]))) # (4,4)
     return k, m1,m2
 
-def read_poses_orig(idx, dataset_path=None):
-    """ returns extrinsics camera matrices [R|t], with this being
+def read_poses_cam_to_world(idx=None, dataset_path=None):
+    """ read original poses.
+    returns extrinsics camera matrices [R|t], with this being
     from CAMERA to WORLD.
     :param idx: list of lines to take
     :return: list of extrinsics matrices [ndarray(4,4), ..., ndarray(4,4)]
     """
-    assert sorted(idx) == idx
+    if idx:
+        assert sorted(idx) == idx
     matrices = []
     if dataset_path is None:
         dataset_path = data_path()
@@ -91,23 +106,23 @@ def read_poses_orig(idx, dataset_path=None):
                         return matrices
     return matrices
 
-def read_dws(idx, dataset_path=None):
-    """ returns dws from kitti original matries
-    :param idx: list of lines to take of size n
+def read_dws(idx=None, dataset_path=None):
+    """ returns dws from kitti original matrices
+    :param idx: list (size n) of lines to read. If none read all
     :return: ndarray (3,n)
     """
-    matrices = read_poses_orig(idx=idx, dataset_path=dataset_path)
+    matrices = read_poses_cam_to_world(idx=idx, dataset_path=dataset_path)
     dws = []
     for m in matrices:
         dws.append(m[0:3,-1])
     return np.array(dws).T
 
-def read_poses_world_to_cam(idx, dataset_path=None):
-    matrices = read_poses_orig(idx=idx, dataset_path=dataset_path)
+def read_poses_world_to_cam(idx=None, dataset_path=None):
+    matrices = read_poses_cam_to_world(idx=idx, dataset_path=dataset_path)
     matrices = [utils.inv_extrinsics(m) for m in matrices]
     return matrices
 
-def read_relative_poses_world_to_cam(idx, dataset_path=None):
+def read_relative_poses_world_to_cam(idx=None, dataset_path=None):
     """ from l{idx-1} to to l{idx}"""
     ext_mats = read_poses_world_to_cam(idx, dataset_path)
     r0_to_r1_s, t0_to_t1_s = [], []
@@ -119,8 +134,7 @@ def read_relative_poses_world_to_cam(idx, dataset_path=None):
     t0_to_t1_s = np.array(t0_to_t1_s)
     return r0_to_r1_s, t0_to_t1_s.T
 
-
-def read_trans_vectors(idx, dataset_path=None):
+def read_trans_vectors(idx=None, dataset_path=None):
     """ returns translation vectors from (WORLD-TO-CAM) kitti matries
     :param idx: list of lines to take of size n
     :return: ndarray (3,n)
@@ -131,20 +145,5 @@ def read_trans_vectors(idx, dataset_path=None):
         trans_vecs.append(m[0:3,-1])
     return np.array(trans_vecs).T
 
-def get_images_path_from_dataset_path(dataset_path):
-    base = os.path.basename(dataset_path) # dataset05
-    seq_num = re.search(r"[0-9]+", base).group(0) # 05
-    images_path = os.path.join(dataset_path, 'sequences', str(seq_num))
-    return images_path
-
-def get_poses_path_from_dataset_path(dataset_path):
-    base = os.path.basename(dataset_path) # dataset05
-    seq_num = str(re.search(r"[0-9]+", base).group(0)) # 05
-    poses_path = os.path.join(dataset_path, 'poses', seq_num+'.txt')
-    return poses_path
-
 if __name__=="__main__":
-    np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
-    idx = [0,10,20]
-    rots, trans = read_relative_poses_world_to_cam(idx=idx)
-    z=3
+    pass
