@@ -16,9 +16,6 @@ LOWE_THRESHOLD = 0.7 # threshold to use in knn matching
 
 class DrawMatchesDouble:
     def __init__(self, img0, img1, kp0, kp1, pc=None, i=0):
-        if isinstance(kp0, list):
-            kp0 = get_kp_from_KeyPoints(kp0)
-            kp1 = get_kp_from_KeyPoints(kp1)
         if img0.ndim == 2:
             img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
             img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
@@ -110,17 +107,6 @@ class DrawMatchesDouble:
             plt.savefig(path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
-# if __name__=="__main__":
-#     kp1 = np.array([
-#         [23.85, 163, 166, 171.3, 175.3, 188.8, 209.3, 229.1, 238, 238.7, 246.2, 274.4, 278.4, 302.5, 313.9, 316.8, 332.2, 351, 385.2, 403.5, 405.6, 466.3, 599.3, 663.6, 675.2, 1111, 1123, 1129],
-#         [116.3, 203, 214.5, 159.6, 220.8, 159.6, 199.9, 147.8, 152.3, 180.5, 145.9, 142, 180.5, 196.1, 133.2, 143.7, 153.3, 142.7, 122, 145.7, 154, 201.3, 155.9, 145.6, 144.5, 48.62, 47.85, 47.64]])
-#     kp2 = np.array([
-#        [10.04, 145.5, 148.3, 159.9, 156.6, 176.6, 189.9, 212.7, 221.4, 228.9, 230.6, 258.5, 269.4, 288.9, 299.4, 301.1, 315.7, 335.1, 371.1, 390.3, 394.2, 455.3, 597, 657.1, 667.2, 1097, 1092, 1097],
-#        [116.8, 203, 213.6, 159.9, 220.5, 159.4, 200.6, 148, 152, 180.9, 146.1, 142.1, 180.3, 197, 132.6, 143.6, 153.4, 143.1, 122, 144.2, 154.1, 201.4, 155.5, 145.3, 144, 46.95, 47.43, 46.95]])
-#     img1, img2 = kitti.read_images(idx=0)
-#     drawer = DrawMatchesDouble(img1, img2, kp1, kp2)
-#     drawer.draw_matches_double(size=0)
-#
 class Features:
     def __init__(self, det="SIFT", desc="SIFT", matcher="BF", feature_grid=False, save=False, **kwargs):
         self.det = det # detector,
@@ -272,12 +258,11 @@ def match_two_pairs(i, n):
 
     kp_ln, desc_ln, kp_rn = featurez.get_kps_desc_stereo_pair(n)
     kp_ln, kp_rn, pc_lr_n_in_ln, desc_ln = triang.triang_and_rel_filter(kp_ln, kp_rn, k, ext_id, ext_l_to_r, desc_ln)
-    return
     # match li-ln
     matches_li_ln = featurez.matcher.match(desc_li.T, desc_ln.T)  # list of matches [DMatch1,... DMatch1N]
     matches_li_ln = filter_matches(matches_li_ln, kp_li, kp_ln, is_stereo=False)
 
-    return kp_li, kp_ri, pc_lr_i_in_li, kp_ln, kp_rn, matches_li_ln
+    return kp_li, kp_ri, pc_lr_i_in_li, kp_ln, kp_rn, pc_lr_n_in_ln, matches_li_ln
 
 def filter_with_matches(matches, query_lst, train_lst):
     query_inds = [m.queryIdx for m in matches]
@@ -290,54 +275,14 @@ def filter_with_matches(matches, query_lst, train_lst):
 if __name__=="__main__":
     match_two_pairs(600,2201)
 
-#########################   Visualization Utils   #########################
-
-def plot_inliers_outliers(img, kp_inliers, kp_outliers, title="", save=False):
-    inliers_KeyPoints = get_Keypoints_from_kp(kp_inliers)
-    outliers_KeyPoints = get_Keypoints_from_kp(kp_outliers)
-    img = cv2.drawKeypoints(image=img, keypoints=inliers_KeyPoints,outImage=None, color=ORANGE_COLOR, flags=0)
-    img = cv2.drawKeypoints(image=img, keypoints=outliers_KeyPoints, outImage=None, color=CYAN_COLOR, flags=0)
-    utils.cv_disp_img(img=img, title=title, save=save)
-
-def get_kp_from_KeyPoints(KeyPoints):
-    assert isinstance(KeyPoints, list)
-    return np.array([p.pt for p in KeyPoints]).T
-
-def get_Keypoints_from_kp(kp):
-    assert isinstance(kp, np.ndarray)
-    assert kp.ndim==2; assert kp.shape[0] == 2
-    return [cv2.KeyPoint(x,y,7) for (x,y) in kp.T]
-
-def draw_matches_cv(img1, KeyPoints1, img2, KeyPoints2, matches, size=0 ,save=False):
-    assert type(KeyPoints1) == type(KeyPoints1) == type([])
-    if size:
-        inds = np.random.choice(len(matches), size=size, replace=False)
-        matches = [matches[i] for i in inds]
-    matches_img = cv2.drawMatches(img1, KeyPoints1, img2, KeyPoints2, matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-    utils.cv_disp_img(img=matches_img, title="matches_20", save=save)
-
-def vis_y_dist_matches_cv(img1, img2, KeyPoints1, KeyPoints2, matches,save=False):
-    # get first 20 matches
-    if isinstance(matches[0], list):
-        matches = [match[0] for match in matches]
-    if isinstance(KeyPoints1, np.ndarray):
-        KeyPoints1 = get_Keypoints_from_kp(KeyPoints1)
-        KeyPoints2 = get_Keypoints_from_kp(KeyPoints2)
-
-    draw_matches_cv(img1=img1, KeyPoints1=KeyPoints1, img2=img2, KeyPoints2=KeyPoints2, matches=matches, size=20,save=save)
-    y_dists = []
-    for match in matches:
-        y_dist = abs(KeyPoints1[match.queryIdx].pt[1] - KeyPoints2[match.trainIdx].pt[1])
-        y_dists.append(y_dist)
-
-    # plot histogram
-    y_dists = np.array(y_dists)
-    plt.hist(y_dists, bins="stone")
-    plt.title(f"hist of y-dist of matches,"
-              f" {sum(y_dists>2)}/{len(matches)}={sum(y_dists>2)/len(matches):.1%} > 2")
-    plt.ylabel("number of matches"); plt.xlabel("match's distance in y-axis")
-    hist_path = utils.get_avail_path(os.path.join(utils.out_dir(), "matches_hist.png"))
-    if save:
-        plt.savefig(hist_path)
-    plt.show()
-    print(f"{sum(y_dists>2)}/{len(matches)}={sum(y_dists>2)/len(matches):.1%} matches with y-dist > 2:")
+# if __name__=="__main__":
+#     kp1 = np.array([
+#         [23.85, 163, 166, 171.3, 175.3, 188.8, 209.3, 229.1, 238, 238.7, 246.2, 274.4, 278.4, 302.5, 313.9, 316.8, 332.2, 351, 385.2, 403.5, 405.6, 466.3, 599.3, 663.6, 675.2, 1111, 1123, 1129],
+#         [116.3, 203, 214.5, 159.6, 220.8, 159.6, 199.9, 147.8, 152.3, 180.5, 145.9, 142, 180.5, 196.1, 133.2, 143.7, 153.3, 142.7, 122, 145.7, 154, 201.3, 155.9, 145.6, 144.5, 48.62, 47.85, 47.64]])
+#     kp2 = np.array([
+#        [10.04, 145.5, 148.3, 159.9, 156.6, 176.6, 189.9, 212.7, 221.4, 228.9, 230.6, 258.5, 269.4, 288.9, 299.4, 301.1, 315.7, 335.1, 371.1, 390.3, 394.2, 455.3, 597, 657.1, 667.2, 1097, 1092, 1097],
+#        [116.8, 203, 213.6, 159.9, 220.5, 159.4, 200.6, 148, 152, 180.9, 146.1, 142.1, 180.3, 197, 132.6, 143.6, 153.4, 143.1, 122, 144.2, 154.1, 201.4, 155.5, 145.3, 144, 46.95, 47.43, 46.95]])
+#     img1, img2 = kitti.read_images(idx=0)
+#     drawer = DrawMatchesDouble(img1, img2, kp1, kp2)
+#     drawer.draw_matches_double(size=0)
+#

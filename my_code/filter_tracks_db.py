@@ -75,12 +75,15 @@ def eval_tracks_db(tracks_path):
     fig.update_layout(title_x=0.5)
     plot(fig)
 
-def filter_tracks_db(tracks_path):
+def filter_tracks_from_path(tracks_path):
     tracks_dir, tracks_name, ext = utils.dir_name_ext(tracks_path)
     print(f'filtering {tracks_name}')
     tracks_db = tracks.read(tracks_path)
-    frames_idx = utils.sorted_nums_form_dict_keys(tracks_db.td)
-    filtered_tracks_db = tracks.Tracks_DB(ext_l0_to_li_s=tracks_db.ext_l0_to_li_s)
+    filter_tracks_db(tracks_db)
+
+def filter_tracks_db(tracks_db):
+    frames_idx = tracks_db.frames_idx
+    filtered_tracks_db = tracks.Tracks_DB(ext_l0_to_li_s=tracks_db)
     filtered_tracks_db.td[0] = dict()
     endframe = frames_idx[-1]  # 50
     k, ext_id, ext_l_to_r = kitti.read_cameras()  # k=(3,4)

@@ -72,7 +72,7 @@ def read_cameras(dataset_path=None):
     k = np.hstack((k, np.zeros((3,1)))) # (3,4)
     m1 = np.vstack((m1, np.array([0,0,0,1]))) # (4,4)
     m2 = np.vstack((m2, np.array([0, 0, 0, 1]))) # (4,4)
-    return k, m1,m2
+    return k, m1, m2
 
 def read_poses_cam_to_world(idx=None, dataset_path=None):
     """ read original poses.
@@ -81,12 +81,12 @@ def read_poses_cam_to_world(idx=None, dataset_path=None):
     :param idx: list of lines to take
     :return: list of extrinsics matrices [ndarray(4,4), ..., ndarray(4,4)]
     """
-    if idx:
+    if idx is not None:
         assert sorted(idx) == idx
-    matrices = []
     if dataset_path is None:
         dataset_path = data_path()
     poses_path = get_poses_path_from_dataset_path(dataset_path)
+    matrices = []
     with open (poses_path) as f:
         if not idx:
             for line in f:
@@ -105,6 +105,12 @@ def read_poses_cam_to_world(idx=None, dataset_path=None):
                     if not idx:
                         return matrices
     return matrices
+
+def read_ln_to_li(i, n, dataset_path=None):
+    li_to_l0 = read_poses_cam_to_world([i], dataset_path)[0]
+    ln_to_l0 = read_poses_cam_to_world([n], dataset_path)[0]
+    ln_to_li = utils.B_to_A_mat(li_to_l0, ln_to_l0)
+    return ln_to_li
 
 def read_dws(idx=None, dataset_path=None):
     """ returns dws from kitti original matrices

@@ -8,8 +8,6 @@ import utils
 
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
-# TODO implement better outlier detetction
-
 def relative_inliers(pc):
     """ :param pc: (3,n) """
     x_abs = np.abs(pc[0]); y_abs = np.abs(pc[1])

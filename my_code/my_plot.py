@@ -2,70 +2,54 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotly
 import plotly.graph_objects as go
-import plotly.express as px
-from matplotlib import gridspec
 from plotly.subplots import make_subplots
+from matplotlib import gridspec
 import scipy
-import os
+import os, webbrowser
+
 import utils
-from utils import und_title
+from utils import rund, und_title
 
 ############ MATPLOTLIB ############
-def plt_diff_trans_vecs(trans_diff, plot_dir,title, idx=None, plot=False, save=True):
+def plt_diff_trans_vecs(trans_diff, plot_dir,title, frames_idx=None, save=True, plot=False):
     """ :param trans_diff: (3,n)  
-        :idx: list/array of size n
+        :frames_idx: list/array of size n+1
     """
-    if idx:
-        sizes = idx - np.hstack((0, idx[0:-1]))
+    if frames_idx:
+        sizes = np.array(frames_idx)[1:] - np.array(frames_idx)[:-1]
         trans_diff /= sizes
     else:
-        idx = np.arange(1,trans_diff.shape[1]+1)
-    idx = np.arange(1,) if idx is None else idx
-    fig = plt.figure()
-    plt.plot(idx, trans_diff[0], label="tx")
-    plt.plot(idx, trans_diff[1], label="ty")
-    plt.plot(idx, trans_diff[2], label="tz")
-    plt.ylabel("meters"); plt.xlabel("frames")
-    plt.title (f"Relative abs diff btwn my and kitti trans vectors, {title} in [{idx[0]}-{idx[-1]}]")
-    plt.legend()
-    if save:
-        path = os.path.join(plot_dir, f"diff_trans{und_title(title)}{idx[0]}_{idx[-1]}.png")
-        plt.savefig(path, bbox_inches='tight', pad_inches=0)
-    if plot:
-        plt.show()
-
-def plt_diff2_trans_vecs(my_vecs, kitti_vecs, plot_dir, title ,idx=None, plot=False, save=True):
-    assert my_vecs.shape[1] == kitti_vecs.shape[1]
-    idx = np.arange(1, my_vecs.shape[1] + 1) if idx is None else idx
-    diff = np.abs(my_vecs - kitti_vecs)
+        frames_idx = np.arange(trans_diff.shape[1]+1)
+    startframe = frames_idx[0]; endframe = frames_idx[-1]
     plt.figure()
-    plt.plot(idx, diff[0], label="tx")
-    plt.plot(idx, diff[1], label="ty")
-    plt.plot(idx, diff[2], label="tz")
+    plt.plot(frames_idx[1:], trans_diff[0], label="tx")
+    plt.plot(frames_idx[1:], trans_diff[1], label="ty")
+    plt.plot(frames_idx[1:], trans_diff[2], label="tz")
     plt.ylabel("meters"); plt.xlabel("frames")
-    plt.title (f"Relative abs diff btwn my and kitti trans vectors, {title} in [{idx[0]}-{idx[-1]}]")
+    plt.title (f"Relative abs diff btwn my and kitti trans vectors, {title} in [{startframe}-{endframe}]")
     plt.legend()
     if save:
-        path = os.path.join(plot_dir, f"diff_trans{und_title(title)}{idx[0]}_{idx[-1]}.png")
+        path = os.path.join(plot_dir, f"diff_trans{und_title(title)}{endframe}.png")
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     if plot:
         plt.show()
 
-def plt_diff_rot_matrices(rot_diff, plot_dir, title, idx=None, plot=False, save=True):
+def plt_diff_rot_matrices(rot_diff, plot_dir, title, frames_idx=None, save=True, plot=False):
     """ :param rot_diff: list/array of size n
-        :idx list/array of size n
+        :frames_idx ndarray of size n+1
     """
-    if idx:
-        sizes = idx - np.hstack((0, idx[0:-1]))
+    if frames_idx:
+        sizes = np.array(frames_idx)[1:] - np.array(frames_idx)[:-1]
         rot_diff /= sizes
     else:
-        idx = np.arange(1,len(rot_diff)+1)
+        frames_idx = np.arange(len(rot_diff)+1)
+    startframe = frames_idx[0]; endframe = frames_idx[-1]
     plt.figure()
-    plt.plot(idx, rot_diff)
-    plt.ylabel("degrees"); plt.xlabel("frames")
-    plt.title (f"Relative diff btwn my and kitti rotation matrices, {title} in [{idx[0]}-{idx[-1]}]")
+    plt.plot(frames_idx[1:], rot_diff)
+    plt.ylabel("degrees"); plt.xlabel("Frames")
+    plt.title (f"Relative diff btwn my and kitti rotation matrices, {title} frames [{startframe}-{endframe}")
     if save:
-        path = os.path.join(plot_dir, f"diff_rot{und_title(title)}{idx[0]}_{idx[-1]}.png")
+        path = os.path.join(plot_dir, f"diff_rot{und_title(title)}{endframe}.png")
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     if plot:
         plt.show()
@@ -84,7 +68,6 @@ def plt_2D_cams(dws_labels_colors, title, plot_dir="plt", save=True, plot=False)
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     if plot:
         plt.show()
-
 def plt_3D_cams(dws_labels_colors, title, plot_dir="plt",save=True, plot=False):
     fig = plt.figure()
     xmin = ymin = zmin = np.inf; xmax = ymax = zmax = -np.inf
@@ -107,7 +90,7 @@ def plt_3D_cams(dws_labels_colors, title, plot_dir="plt",save=True, plot=False):
     if plot:
         plt.show()
 
-def plt_bundle_errors(errors_before, errors_after, idx, title="", plot_dir="plt", plot=False, save=True,xlabel="frames"):
+def plt_bundle_errors(errors_before, errors_after, idx, title="", plot_dir="plt", save=True, plot=False,xlabel="frames"):
     plt.figure()
     plt.plot(idx, errors_before, label="before")
     plt.plot(idx, errors_after, label="after")
@@ -240,8 +223,28 @@ class Draw_KP_PC_INLIERS:
             plt.savefig(path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
+
+        plt.show()
 ############ PLOTLY ############
-def plotly_bar(y, bins=None, title="", plot=True, plot_dir=""):
+def plotly_save_fig(fig, title, plot_dir, save, plot):
+    fig.update_layout(title_text=title, title_x=0.5, font=dict(size=14))
+    if save:
+        path = os.path.join(plot_dir, title + '.html')
+        fig.write_html(path, auto_open=False)
+        json_dir = os.path.join(plot_dir, 'JSON'); utils.make_dir_if_needed(json_dir)
+        json_path = os.path.join(json_dir, title +'.JSON')
+        fig.write_json(json_path)
+        png_dir = os.path.join(plot_dir,'PNG'); utils.make_dir_if_needed(png_dir)
+        png_path = os.path.join(png_dir, title + '.png')
+        fig.write_image(png_path)
+        if plot: webbrowser.open(utils.path_to_windows(path), new=2)
+    if not save and plot:
+        path = os.path.join("tmp.html")
+        path = utils.get_avail_path(path)
+        fig.write_html(path, auto_open=False)
+        webbrowser.open(utils.path_to_windows(path), new=2)
+
+def plotly_bar(y, bins=None, title="", plot_dir="", save=True, plot=False):
     if bins is None:
         bins = np.arange(len(y))
     fig = go.Figure(go.Bar(x=bins, y=y))
@@ -249,37 +252,34 @@ def plotly_bar(y, bins=None, title="", plot=True, plot_dir=""):
     fig.update_traces(textposition='inside', textfont_size=12)
     fig.update_layout(bargap=0, title_text=title, title_x=0.5, font=dict(size=18))
     fig.update_traces(marker_color='blue', marker_line_color='blue', marker_line_width=1)
-    if plot_dir:
-        path = os.path.join(plot_dir, f'bar{und_title(title)}' + '.html')
-        fig.write_html(path)
-    if plot:
-        plotly.offline.plot(fig)
+
+    plotly_save_fig(fig, f'bar{und_title(title)}', plot_dir, save, plot)
     
-def plotly_hist(y, bins=None, title="", density=True, plot=True, plot_dir=""):
+def plotly_hist(y, bins=None, title="", plot_dir="", density=True, save=True, plot=True):
     if bins is None:
         bins = np.arange(np.max(y)+2)
     y_hist, bins = np.histogram(y, bins=bins, density=density)
     plotly_bar(y=y_hist, bins=bins, title=title, plot=plot, plot_dir=plot_dir)
 
-def plotly_2D_cams(dws_names_colors, title, plot_dir, frames_idx=None, save=True, plot=False):
+def plotly_2D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=True, plot=False):
     num_frames = dws_names_colors[0][0].shape[1] # 11
     num_traces = len(dws_names_colors)
     frames_idx = np.array(frames_idx) if frames_idx else np.arange(0,num_frames)  # [0-10]
+
+    fig = go.Figure()
+
+    # create fixed scatters
+    for dws, name, color in dws_names_colors:
+        trace = go.Scatter(x=dws[0], y=dws[2], mode='lines+markers', marker=dict(size=3.5, color=color),
+                          name=name, line=dict(color=color, width=1),
+                          hovertemplate="x:%{x:.1f}, z:%{y:.1f}, f=%{text}", text=frames_idx)
+        fig.add_trace(trace)
 
     if num_frames > 1000:
         inds = np.arange(0, num_frames, 10)
         num_frames = inds.size
         dws_names_colors = [(dws[:,inds], label, color) for dws,label,color in dws_names_colors]
         frames_idx = frames_idx[inds]
-
-    fig = go.Figure()
-
-    # create fixed scatters
-    for dws, name, color in dws_names_colors:
-        trace = go.Scatter(x=dws[0], y=dws[2], mode='lines+markers', marker=dict(size=4.5, color=color, opacity=0.5),
-                          name=name, line=dict(color=color),
-                          hovertemplate="x:%{x:.1f}, z:%{y:.1f}, f=%{text}", text=frames_idx)
-        fig.add_trace(trace)
 
     # create marker scatters
     for i in range(num_frames):
@@ -305,31 +305,21 @@ def plotly_2D_cams(dws_names_colors, title, plot_dir, frames_idx=None, save=True
     fig.update_layout(xaxis=dict(zeroline=False), xaxis_title="X", yaxis=dict(zeroline=False), yaxis_title="Z")
     fig.update_yaxes(scaleanchor = "x",scaleratio = 1)
 
-    title1 = f"left camera location {title}"
-    fig.update_layout(title_text=title1, title_x=0.5, font=dict(size=14))
-    if save:
-        path = os.path.join(plot_dir, f'2D_cams_{title}' + '.html')
-        fig.write_html(path)
-        json_dir = os.path.join(plot_dir, 'JSON')
-        utils.make_dir_if_needed(json_dir)
-        json_path = os.path.join(json_dir, f'2D_cams_{title}' + '.JSON')
-        fig.write_json(json_path)
-    if not save and plot:
-        plotly.offline.plot(fig)
+    plotly_save_fig(fig, f'2D_cams_{title}', plot_dir, save, plot)
 
-def plotly_3D_cams(dws_names_colors, title, plot_dir, frames_idx=None, plot=False, save=True):
+def plotly_3D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=True, plot=False):
     num_frames = dws_names_colors[0][0].shape[1] # 11
     num_traces = len(dws_names_colors)
-    frames_idx = np.array(frames_idx) if frames_idx else np.arange(0,num_frames)  # [0-10]
+    frames_idx = np.array(frames_idx) if frames_idx is not None else np.arange(0,num_frames)  # [0-10]
+
+    fig = go.Figure()
 
     if num_frames > 1000:
         inds = np.arange(0, num_frames, 10)
         num_frames = inds.size
         dws_names_colors = [(dws[:,inds], label, color) for dws,label,color in dws_names_colors]
         frames_idx = frames_idx[inds]
-
-    fig = go.Figure()
-
+    
     # create fixed scatter
     for dw, name, color in dws_names_colors:
         trace = go.Scatter3d(x=dw[0], y=dw[2], z=dw[1], name=name, mode='markers+lines', line=dict(color=color),
@@ -338,11 +328,8 @@ def plotly_3D_cams(dws_names_colors, title, plot_dir, frames_idx=None, plot=Fals
                                 text=frames_idx)
         fig.add_trace(trace)
 
-    camera = dict(up=dict(x=0, y=0, z=1),
-                center=dict(x=0, y=0, z=0),
-                eye=dict(x=0.2, y=-2, z=0.5) )
-    fig.update_layout(scene_camera=camera)
-
+    camera = dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0.2, y=-2, z=0.5) );fig.update_layout(scene_camera=camera)
+    
     # create marker scatters
     for i in range(num_frames):
         scat = go.Scatter3d(x=[dws[0,i] for dws,n,c in dws_names_colors], 
@@ -354,14 +341,13 @@ def plotly_3D_cams(dws_names_colors, title, plot_dir, frames_idx=None, plot=Fals
                                           f"<br>frame={str(frames_idx[i])}")
         fig.add_trace(scat)
 
-    # Create and add slider
+    # Create and add a slider
     steps = []
     for i in range(num_frames):
         vises = [False] * len(fig.data)
         vises[:num_traces] = [True] * num_traces; vises[i + num_traces] = True
         step = dict(method="update", args=[{"visible": vises}], label=f"{frames_idx[i]}")
         steps.append(step)
-
     sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
     fig.update_layout(sliders=sliders)
     
@@ -371,64 +357,96 @@ def plotly_3D_cams(dws_names_colors, title, plot_dir, frames_idx=None, plot=Fals
     title1 = f"left camera location {title}"
     fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
     fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y'))
+    plotly_save_fig(fig, f'3D_cams_{title}', plot_dir, save, plot)
 
-    if save:
-        path = os.path.join(plot_dir, f'3D_cams_{title}' + '.html')
-        fig.write_html(path)
-        json_dir = os.path.join(plot_dir, 'JSON')
-        utils.make_dir_if_needed(json_dir)
-        json_path = os.path.join(json_dir, f'3D_cams_{title}' + '.JSON')
-        fig.write_json(json_path)
-    if not save and plot:
-        plotly.offline.plot(plot)
-
-def plotly_scatter(y, x=None, name="", plot_dir=None, mode='markers', plot=False):
+def plotly_scatter(y, x=None, mode='lines+markers', title="", plot_dir="", xaxis="Frames", yaxis="Y", yrange=None, save=True, plot=False):
     scatter = go.Scatter(x=x, y=y, mode=mode)
-    fig = go.Figure(scatter)
-    
-    fig.update_layout(font=dict(size=16))
-    fig.update_layout(title_text=name, title_x=0.5)
-    fig.update_layout(xaxis_title="X", yaxis_title="Y")
-    
-    if plot_dir:
-        path = os.path.join(plot_dir, name+'.html')
-        fig.write_html(path, auto_open=plot)
-    if plot and not plot_dir:
-        plotly.offline.plot(fig)
+    fig = go.Figure(scatter)    
+    fig.update_layout(xaxis_title=xaxis, yaxis_title=yaxis)
+    if yrange: fig.update_yaxes(range=yrange)
+    plotly_save_fig(fig, title, plot_dir, save, plot)
 
-def plotly_scatters(name_y_dict, title="", x=None, plot_dir=None, mode='markers', xaxis="Frames", yaxis=""):
+def plotly_scatters(name_y_dict, x=None, title="", plot_dir="", mode='lines+markers', xaxis="Frames", yaxis="Y", yrange=None, save=True, plot=False):
     fig = go.Figure()
     for name, y in name_y_dict.items():
         fig.add_trace(go.Scatter(x=x,y=y, name=name, mode=mode))
-    fig.update_layout(font=dict(size=16))
-    fig.update_layout(title_text=title, title_x=0.5)
     fig.update_layout(xaxis_title=xaxis, yaxis_title=yaxis)
-    if plot_dir:
-        path = os.path.join(plot_dir, title+'.html')
-        fig.write_html(path, auto_open=False)
+    if yrange: fig.update_yaxes(range=yrange)
+    plotly_save_fig(fig, title, plot_dir, save, plot)
+    
+def get_k_small(arr,k, min=True):
+    if not min:
+        arr = -arr
+    inds = np.argpartition(arr,k)[:k]
+    sort_inds = np.argsort(arr[inds])
+    orig_sort_inds = inds[sort_inds]
+    vals_sort = arr[orig_sort_inds]
+    if not min:
+        vals_sort *= -1
+    return orig_sort_inds, vals_sort
 
-def plot_trans_rot_norms(rot_norms, trans_norms, title="", frames_idx=None, plot_dir=""):
+def plotly_k_scatter(llsd, frames_idx, title="", plot_dir="",plot=False, save=True, k=5, yaxis="Y", min=True, kitti=False):
+    endframe = llsd[-1][0]['cur_frame']
+    fig = go.Figure()
+    vals_frames_idx = []
+    vals_arr, inds_arr = [], []
+    rot_diffs_arr, trans_diffs_arr = [], []
+    for l in llsd:
+        # extract k smallest/largest values
+        d = l[0]
+        cur_frame = d['cur_frame']
+        vals_frames_idx.append(cur_frame)
+        vals = np.array(d['y'])
+        inds_k, vals_k  = get_k_small(vals, k, min=min)
+        vals_arr.append(vals_k); inds_arr.append(inds_k)
+        if kitti: 
+            rot_diffs = np.array(d['rot_diffs']); trans_diffs = np.array(d['trans_diffs'])
+            rot_diffs_arr.append(rot_diffs[inds_k]); trans_diffs_arr.append(trans_diffs[inds_k])
+    vals_arr = np.asarray(vals_arr).T # (k, num_of_frames)
+    inds_arr = np.asarray(inds_arr).T # (k, num_of_frames)
+    if kitti: rot_diffs_arr = np.asarray(rot_diffs_arr).T; trans_diffs_arr = np.asarray(trans_diffs_arr).T; 
+    f = np.array(frames_idx)
+    correct_inds_arr = [f[row] for row in inds_arr]
+    if kitti:
+        res = []
+        for ind_row, rot_row, trans_row in zip(correct_inds_arr, rot_diffs_arr, trans_diffs_arr):
+            new_txt = [f'f={ind}, rot={rot:.2f}, trans={trans:.2f}  ' for ind,rot,trans in zip(ind_row, rot_row, trans_row)]
+            res.append(new_txt)
+        correct_inds_arr = res
+    # add scatters 
+    i=0
+    for vals_i, inds_txt_i in zip(vals_arr, correct_inds_arr):
+        mode='markers+lines' if i==0 else 'markers'
+        fig.add_trace( go.Scatter(x=vals_frames_idx, y=vals_i, mode=mode, marker=dict(size=8), name=f'{i}', hovertemplate='%{text}, %{y:.2f}', text=inds_txt_i))
+        i+=1
+    # add lines
+    for frame, f_vals in zip(vals_frames_idx, vals_arr.T):
+        fig.add_trace(go.Scatter( x=[frame,frame], y=[f_vals[0], f_vals[-1]], line=dict(color="black"), showlegend=False, hoverinfo='skip'))
+    
+    fig.update_layout(xaxis_title="frames", yaxis_title=yaxis)
+    fig.update_yaxes(range=[0,1])
+    fig.update_layout(hovermode="x unified")
+    plotly_save_fig(fig, f'{title}_{endframe}', plot_dir, save, plot)
+
+def plot_trans_rot_norms(rot_norms, trans_norms, title="", plot_dir="", frames_idx=None, save=True, plot=False):
     num_frames = len(rot_norms) # 11
     frames_idx = frames_idx if frames_idx else np.arange(0,num_frames)  # [0-10]
     endframe = frames_idx[-1]
     rot_scatter = go.Scatter(x=frames_idx, y=rot_norms, mode='lines', name="rot")
     trans_scatter = go.Scatter(x=frames_idx, y=trans_norms, mode='lines', name="trans")
     fig = go.Figure([rot_scatter, trans_scatter])
-    name = f'0_{endframe}{und_title(title)}_btwn_rot_trans_sizes'
-    fig.update_layout(font=dict(size=16))
-    fig.update_layout(title_text=name, title_x=0.5)
+    name = f'rot_trans{und_title(title)}_{endframe}'
     fig.update_layout(xaxis_title="frames", yaxis_title="deg or meters")
     fig.update_layout(hovermode="x")
 
-    if plot_dir:
-        path = os.path.join(plot_dir, name+'.html')
-        fig.write_html(path, auto_open=False)
+    plotly_save_fig(fig, name, plot_dir, save, plot)
 
-def frames_slider_plot(llsd, title="", plot_dir="", xaxis="Frames", yaxis="", save=True, plot=False):
+def frames_slider_plot(llsd, title="", plot_dir="", xaxis="Frames", yaxis="", save=True, plot=False, yrange=None):
     """
     :param: llsd: list_of_lists_of_scatter_dcts
                   [l1,..., ln] where each li is a list of [d1,..] where dj = {'x':[], 'y':[], 'name':str, 'mode':mode, 'cur_frame':str() }
     """
+    if not llsd: return
     endframe = llsd[-1][0]['cur_frame']
     num_frames = len(llsd)
     fig = go.Figure()
@@ -459,18 +477,11 @@ def frames_slider_plot(llsd, title="", plot_dir="", xaxis="Frames", yaxis="", sa
 
     fig.update_layout(title_text=title, title_x=0.5, font=dict(size=14))
     fig.update_layout(xaxis_title=xaxis, yaxis_title=yaxis)
+    if yrange: fig.update_yaxes(range=yrange)
 
-    if save:
-        path = os.path.join(plot_dir, f'0_{endframe}{und_title(title)}{endframe}' + '.html')
-        fig.write_html(path, auto_open=plot)
-        json_dir = os.path.join(plot_dir, 'JSON')
-        utils.make_dir_if_needed(json_dir)
-        json_path = os.path.join(json_dir, f'matches{und_title(title)}' + '.JSON')
-        fig.write_json(json_path)
-    if not save and plot:
-        plotly.offline.plot(fig)
+    plotly_save_fig(fig, f'0_{endframe}{und_title(title)}{endframe}', plot_dir, save, plot)
 
-def plotly_kp_pc_inliers(img_l, img_r, kp_l, kp_r, pc, inliers_bool, title="", plot_dir="", save=True, plot=False):
+def plotly_kp_pc_inliers(img_l, img_r, kp_l, kp_r, pc, inliers_bool, title="", plot_dir="", plot=False, save=True):
     fig = make_subplots(rows=2, cols=2,
                         specs=[
                             [{"type":"xy"},{"type":"xy"}],
@@ -489,7 +500,6 @@ def plotly_kp_pc_inliers(img_l, img_r, kp_l, kp_r, pc, inliers_bool, title="", p
 
     fig.update_yaxes(autorange='reversed', scaleanchor='x', constrain='domain', showgrid=False, zeroline=False, row=1, col=2)
     fig.update_xaxes(constrain='domain',showgrid=False, zeroline=False, row=1, col=2)
-
 
     fig.data[0].showscale = False; fig.data[0].coloraxis = None
     fig.data[1].showscale = False; fig.data[1].coloraxis = None
@@ -550,17 +560,8 @@ def plotly_kp_pc_inliers(img_l, img_r, kp_l, kp_r, pc, inliers_bool, title="", p
     # fig.update_layout(margin=dict(l=0, r=0, b=0, t=40))
     fig.update_layout(coloraxis_showscale=False)
     fig.update_layout(showlegend=True)
-    fig.update_layout(title_text=title, title_x=0.5)
 
-    if save:
-        path = os.path.join(plot_dir, f'matches{und_title(title)}' + '.html')
-        fig.write_html(path, auto_open=plot)
-        json_dir = os.path.join(plot_dir, 'JSON')
-        utils.make_dir_if_needed(json_dir)
-        json_path = os.path.join(json_dir, f'matches{und_title(title)}' + '.JSON')
-        fig.write_json(json_path)
-    if plot and not save:
-        plotly.offline.plot(fig)
+    plotly_save_fig(fig, title, plot_dir, save, plot)
 
 def plotly_inliers_outliers(img, kp, inliers_bool,  pc, title="", plot_dir="", plot=False, save=True):
 
@@ -617,18 +618,40 @@ def plotly_inliers_outliers(img, kp, inliers_bool,  pc, title="", plot_dir="", p
     fig.update_layout(coloraxis_showscale=False)
     fig.update_layout(showlegend=True)
 
-    fig.update_layout(title_text=title, title_x=0.5)
+    plotly_save_fig(fig, f'inliers_outliers{und_title(title)}', plot_dir, save, plot)
+    
+def plotly_cov_dets(cov_lj_cond_li_dict, frames_idx, title="", plot_dir="", plot=False, save=True):
+    # conditional
+    num_frames = len(frames_idx) # 277
+    endframe=frames_idx[-1]
+    cov_lj_cond_li_s, cov_li_cond_lj_s =[], []
+    lj_cond_li_dets, li_cond_lj_dets =[], []
+    for j in range(1,num_frames): # [1,..,276]
+        cov_lj_cond_li = cov_lj_cond_li_dict[j][j-1]; cov_lj_cond_li_s.append(cov_lj_cond_li)
+        cov_li_cond_lj = cov_lj_cond_li_dict[j-1][j]; cov_li_cond_lj_s.append(cov_li_cond_lj)
+        lj_cond_li_dets.append( np.linalg.det(cov_lj_cond_li) )
+        li_cond_lj_dets.append( np.linalg.det(cov_li_cond_lj) )
+    title = rund(title)
+    dct1 = {'det_lj_cond_li':lj_cond_li_dets, 'det_li_cond_li':li_cond_lj_dets}
+    plotly_scatters(dct1, x=frames_idx, title=f"det_cond_{title}{endframe}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
+    
+    # cumsum
+    cumsum_lj_on_li = utils.cumsum_mats(cov_lj_cond_li_s); 
+    cumsum_lj_on_li_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_lj_on_li]
+    cumsum_li_on_lj = utils.cumsum_mats(cov_li_cond_lj_s)
+    cumsum_li_on_lj_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_li_on_lj]
+    dct1 = {'cumsum_lj_cond_li':cumsum_lj_on_li_dets, 'cumsum_li_cond_lj':cumsum_li_on_lj_dets}
+    plotly_scatters(dct1, x=frames_idx, title=f"det_cumsum_cond_{title}{endframe}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
 
-    if save:
-        path = os.path.join(plot_dir, f'inliers_outliers{und_title(title)}' + '.html')
-        fig.write_html(path, auto_open=plot)
-        json_dir = os.path.join(plot_dir, 'JSON')
-        utils.make_dir_if_needed(json_dir)
-        json_path = os.path.join(json_dir, f'inliers_outliers{und_title(title)}' + '.JSON')
-        fig.write_json(json_path)
-
-    if not save and plot:
-        plotly.offline.plot(fig)
+def pose_graph_llsd(keyframes_idx, llsd_inliers, llsd_mahal, llsd_dets, title, plot_dir):
+    if llsd_mahal:
+        plotly_k_scatter(llsd_mahal, keyframes_idx, title=f"{title}_mahals_k_scatter", plot_dir=plot_dir, min=True, yaxis="mahal_dist", plot=False, save=True)
+        frames_slider_plot(llsd_mahal, title=f"{title}_mahal_dist_slider", plot_dir=plot_dir, yaxis="mahal dist", yrange=[0,5], plot=False, save=True)
+    if llsd_inliers: 
+        plotly_k_scatter(llsd_inliers, keyframes_idx, title=f"{title}_inliers_percents_k_scatter", plot_dir=plot_dir, min=False, yaxis=r"% inliers", plot=False, save=True, kitti=True)
+        frames_slider_plot(llsd_inliers, title=f"{title}_inliers_percents_slider", plot_dir=plot_dir, yaxis=r"% inliers", yrange=[0,1], plot=False, save=True)         
+    if llsd_dets:
+        frames_slider_plot(llsd_dets, title=f"{title}_det_distance", plot_dir=plot_dir, yaxis=r"det_distance", plot=False, save=True)
 
 # if __name__=="__main__":
 #     my_dws = np.array([[0, -0.004751, -0.01733, -0.02374, -0.02972, -0.03907, -0.05193, -0.06274, -0.07457, -0.09065,

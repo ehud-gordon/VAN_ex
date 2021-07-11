@@ -31,18 +31,17 @@ class Track:
 
 
 class Tracks_DB:
-    def __init__(self, td=None, ext_l0_to_li_s=None):
-        self.ext_l0_to_li_s = ext_l0_to_li_s
-        if td is None: # tracks dictionary
-            self.td = dict()
-        else:
-            self.td = td        
+    def __init__(self, td=None, frames_idx=None):
+        self.td = dict() if td is None else td
+        self.frames_idx = [] if frames_idx is None else frames_idx
 
-    def add_frame(self, matches_li_lj, i,j, kp_li, kp_ri, kp_lj, kp_rj, pc_lr_i_in_l0, pc_lr_j_in_l0=None):
-        assert kp_li.shape[1] == kp_ri.shape[1] == pc_lr_i_in_l0.shape[1]
+    def add_frame(self, matches_li_lj, i,j, kp_li, kp_ri, kp_lj, kp_rj, pc_lr_i_in_li, pc_lr_j_in_lj=None):
+        if not self.frames_idx: self.frames_idx.append(i)
+        self.frames_idx.append(j)
+        assert kp_li.shape[1] == kp_ri.shape[1] == pc_lr_i_in_li.shape[1]
         assert kp_lj.shape[1] == kp_rj.shape[1]
-        if pc_lr_j_in_l0 is not None:
-            assert kp_lj.shape[1] == kp_rj.shape[1] == pc_lr_j_in_l0.shape[1]        
+        if pc_lr_j_in_lj is not None:
+            assert kp_lj.shape[1] == kp_rj.shape[1] == pc_lr_j_in_lj.shape[1]        
         self.td[j] = dict()
         if i not in self.td:
             self.td[i] = dict()
@@ -53,11 +52,11 @@ class Tracks_DB:
         for match in matches_li_lj:
             match_i_id = match.queryIdx
             match_j_id = match.trainIdx
-            pc_i_meas_in_l0 = pc_lr_i_in_l0[:, match_i_id] # the pc estimate from frame i
-            if pc_lr_j_in_l0 is not None:
-                pc_j_meas_in_l0 = pc_lr_j_in_l0[:, match_j_id] # the pc estimate from frame j, should be real close to pc_li
+            pc_i_meas_in_li = pc_lr_i_in_li[:, match_i_id] # the pc estimate from frame i
+            if pc_lr_j_in_lj is not None:
+                pc_j_meas_in_lj = pc_lr_j_in_lj[:, match_j_id] # the pc estimate from frame j, should be real close to pc_li
             else:
-                pc_j_meas_in_l0 = 0
+                pc_j_meas_in_lj = 0
             lj_meas = kp_lj[:, match_j_id]
             rj_meas = kp_rj[:, match_j_id]
             # add all tracks that extend existing previous tracks
@@ -66,7 +65,7 @@ class Tracks_DB:
                 prev_track.next = (j, match_j_id)
                 track_id = prev_track.id
                 track_length = prev_track.length + 1
-                new_track_j = Track(id=track_id, pc=pc_j_meas_in_l0, left_meas=lj_meas, right_meas=rj_meas, length=track_length,
+                new_track_j = Track(id=track_id, pc=pc_j_meas_in_lj, left_meas=lj_meas, right_meas=rj_meas, length=track_length,
                                      cam_id=j, match_id=match_j_id, prev=(i, match_i_id))
                 if match_j_id in self.td[j]:
                     weird = self.td[j][match_j_id]
@@ -76,17 +75,16 @@ class Tracks_DB:
                 track_id = cam_match_idx_to_track_id(i, match_i_id)
                 li_meas = kp_li[:,match_i_id]
                 ri_meas = kp_ri[:, match_i_id]
-                new_track_i = Track(id=track_id, pc=pc_i_meas_in_l0, left_meas=li_meas, right_meas=ri_meas, length=1, cam_id=i,
+                new_track_i = Track(id=track_id, pc=pc_i_meas_in_li, left_meas=li_meas, right_meas=ri_meas, length=1, cam_id=i,
                                      match_id=match_i_id, next=(j, match_j_id))
                 self.td[i][match_i_id] = new_track_i
 
-                new_track_j = Track(id=track_id, pc=pc_j_meas_in_l0, left_meas=lj_meas, right_meas=rj_meas, length=2, cam_id=j,
+                new_track_j = Track(id=track_id, pc=pc_j_meas_in_lj, left_meas=lj_meas, right_meas=rj_meas, length=2, cam_id=j,
                                      match_id=match_j_id, prev=(i, match_i_id))
                 if match_j_id in self.td[j]:
                     weird2 = self.td[j][match_j_id]
                     print("error2", new_track_j)
                 self.td[j][match_j_id] = new_track_j
-
 
     def get_track_ids(self, cam_id):
         try:
@@ -106,15 +104,15 @@ class Tracks_DB:
         except KeyError:
             return None
 
-    def serialize(self, dir_path, title=""):
+    def serialize(self, dir_path, title="tracks"):
         d = dict()
         d['td'] = self.td
-        d['ext_l0_to_li_s'] = self.ext_l0_to_li_s
-        path = os.path.join(dir_path,f'{title}.pkl')
-        utils.clear_path(path)
-        with open(path, 'wb') as handle:
+        d['frames_idx'] = self.frames_idx
+        pkl_path = os.path.join(dir_path, f'{title}.pkl')
+        utils.clear_path(pkl_path)
+        with open(pkl_path, 'wb') as handle:
             pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        return path
+        return pkl_path
 
 def cam_match_idx_to_track_id(cam_id, match_id):
     return (cam_id << BITS_TRACKS_PER_IMG) + match_id  # 2050 = 1<<11 + 2
@@ -127,7 +125,7 @@ def track_id_to_cam_match_idx(track_id):
 def read(tracks_pkl_path):
         with open(tracks_pkl_path, 'rb') as handle:
             d = pickle.load(handle)
-        tracks_db = Tracks_DB(td=d['td'], ext_l0_to_li_s=d['ext_l0_to_li_s'])
+        tracks_db = Tracks_DB(td=d['td'], frames_idx=d['frames_idx'])
         return tracks_db
 
 def re_serialize(pkl_path):
@@ -145,8 +143,7 @@ def my_output_results(out_path, ext_l0_to_li_s):
     ext_li_to_l0_s = utils.inv_extrinsics_mult(ext_l0_to_li_s)
     import results
     # output important plots and stats
-    rots_total_error, trans_total_error = results.output_results(out_path, ext_li_to_l0_s, frames_idx, "stage2",
-                                                                    0, plot=True, save=True, relative=False)
+    rots_total_error, trans_total_error = results.output_results(out_path, ext_li_to_l0_s, frames_idx, "stage2", 0, plot=True, save=True)
     # create folder
     stage2_dir =  os.path.join(out_path, 'stage2' + f'_{trans_total_error:.1f}_{rots_total_error:.1f}')
     utils.make_dir_if_needed(stage2_dir)

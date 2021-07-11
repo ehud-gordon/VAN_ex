@@ -21,6 +21,8 @@ MATCH_Y_DIST_MAX = 2
 #########################   Files   #########################
 def dir_name_ext(path):
     folder, base = os.path.split(path)
+    if os.path.isdir(path):
+        return folder, base,""
     name, ext = os.path.splitext(base)
     return folder, name, ext
 
@@ -60,6 +62,7 @@ def path_to_linux(path):
     for p in parts:
         if p=='C:':
             p = 'c'
+        
         right_parts.append(p)
     return r'/'.join(right_parts)
 
@@ -80,22 +83,18 @@ def path_to_current_os(path):
         return path_to_linux(path)
     return path
 
-def sorted_nums_form_dict_keys(d):
-    int_keys = [int(k) for k in d.keys()]
-    return sorted(int_keys)
-
-def serialize_ext_l0_to_li_s(dir_path, ext_l0_to_li_s, title):
-    d = {'ext_l0_to_li_s': ext_l0_to_li_s}
-    pkl_path = os.path.join(dir_path, f'ext_l0_to_li_s{lund(title)}.pkl')
+def serialize_ext_li_to_lj_s(dir_path, ext_li_to_lj_s, title):
+    d = {'ext_li_to_lj_s': ext_li_to_lj_s}
+    pkl_path = os.path.join(dir_path, f'ext_li_to_lj_s{lund(title)}.pkl')
     clear_path(pkl_path)
     with open(pkl_path, 'wb') as handle:
         pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return pkl_path
 
-def deserialize_ext_l0_to_li_s(pkl_path):
+def deserialize_ext_li_to_lj_s(pkl_path):
     with open(pkl_path, 'rb') as handle:
         d = pickle.load(handle)
-    return d['ext_l0_to_li_s']
+    return d['ext_li_to_lj_s']
 
 #########################   Geometry   #########################
 def rodrigues_to_mat(rvec,tvec):
@@ -136,27 +135,18 @@ def inv_extrinsics(ext_mat):
 def inv_extrinsics_mult(ext_mats):
     return [inv_extrinsics(mat) for mat in ext_mats]
 
-def kp_to_np(kp):
-    np_kp = np.array([keypoint.pt for keypoint in kp]).T # (2,n)
-    return np_kp
-
 def rotation_matrices_diff(R,Q):
     rvec, _ = cv2.Rodrigues(R.transpose() @ Q)
     radian_diff = np.linalg.norm(rvec)
     deg_diff = radian_diff * 180 / np.pi
     return deg_diff
 
-def comp_ext_mat(ext_mat_1, ext_mat_2):
+def compare_ext_mat(ext_mat_1, ext_mat_2):
     rot1, t1 = get_r_t(ext_mat_1)
     rot2, t2 = get_r_t(ext_mat_2)
-    rot_diff = rotation_matrices_diff(rot1, rot2)
-    trans_diff = np.linalg.norm(t1-t2)
-    return rot_diff, trans_diff
-
-def rot_trans_i_to_n(ext_0_to_i, ext_0_to_n): # between
-    ext_i_to_0 = inv_extrinsics(ext_0_to_i)
-    ext_n_to_0 = inv_extrinsics(ext_0_to_n)
-    return rot_trans_A_to_B(ext_i_to_0, ext_n_to_0)
+    rot_diff_in_deg = rotation_matrices_diff(rot1, rot2) # in degrees
+    trans_diff = np.linalg.norm(t1-t2) # L2 norm
+    return rot_diff_in_deg, trans_diff
 
 def rot_trans_A_to_B(ext_A_to_0, ext_B_to_0): # between
     rot_A_to_0, trans_A_to_0 = get_r_t(ext_A_to_0)
@@ -181,6 +171,11 @@ def B_to_A_mat(ext_A_to_0, ext_B_to_0):
     rot, trans = rot_trans_B_to_A(ext_A_to_0, ext_B_to_0)
     return r_t_to_ext(rot, trans)
 
+def rot_trans_i_to_n(ext_0_to_i, ext_0_to_n): # between
+    ext_i_to_0 = inv_extrinsics(ext_0_to_i)
+    ext_n_to_0 = inv_extrinsics(ext_0_to_n)
+    return rot_trans_A_to_B(ext_i_to_0, ext_n_to_0)
+
 def rot_trans_j_to_i_s(ext_i_to_0_s):
     rot_j_to_i_s, trans_j_to_i_s = [], []
     for j in range(1, len(ext_i_to_0_s)):
@@ -192,101 +187,100 @@ def rot_trans_j_to_i_s(ext_i_to_0_s):
     trans_j_to_i_s = np.array(trans_j_to_i_s).T
     return rot_j_to_i_s, trans_j_to_i_s
 
+def make_relative_to_ci(ext_ci_to_c0_s):
+    relative_ci_to_c0_s = [np.diag([1,1,1,1])]
+    ci_to_c0 = ext_ci_to_c0_s[0]
+    for j in range(1,len(ext_ci_to_c0_s)):
+        cj_to_c0 = ext_ci_to_c0_s[j]
+        cj_to_ci = B_to_A_mat(ci_to_c0, cj_to_c0)
+        relative_ci_to_c0_s.append(cj_to_ci)
+    return relative_ci_to_c0_s
+
 def get_r_t(mat):
     r = mat[0:3, 0:3]
     t = mat[0:3,3]
     return r.astype('float64'),t.astype('float64')
+
+def get_r_t_s(mats):
+    rot_s, trans_s = [], []
+    for mat in mats:
+        r,t = get_r_t(mat)
+        rot_s.append(r); trans_s.append(t)
+    return rot_s, np.array(trans_s).T
 
 def r_t_to_ext(r,t):
     mat = np.hstack((r, t.reshape(3,1)))
     mat = np.vstack((mat, [0,0,0,1]))
     return mat.astype('float64')
 
-def rot_trans_stats(rot_diffs_relative, trans_diffs_relative, endframe):
-    rots_total_error = np.sum(rot_diffs_relative)
-    rot_avg_error = rots_total_error / endframe
-    tx_error, ty_error, tz_error = np.sum(trans_diffs_relative, axis=1)
-    trans_total_error = + tx_error + ty_error + tz_error
-    trans_avg_error = trans_total_error / endframe
-    stats = [f"sum of relative rotation errors over all {endframe} frames = {rots_total_error:.1f} deg",
-             f"avg. relative rotation error per frame =  {rots_total_error:.1f}/{endframe} = {rot_avg_error:.2f} deg",
-             f"sum of relative translation errors over all {endframe} frames = {trans_total_error:.1f} meters",
-             f"avg. relative translation error per frame =  {trans_total_error:.1f}/{endframe} = {trans_avg_error:.2f} meters","\n"
-             f"sum of relative translation errors over all {endframe} frames, in x-coordinate {tx_error:.1f} meters",
-             f"sum of relative translation errors over all {endframe} frames, in y-coordinate {ty_error:.1f} meters",
-             f"sum of relative translation errors over all {endframe} frames, in z-coordinate {tz_error:.1f} meters"]
-    return stats, rots_total_error,  trans_total_error
+def rot_trans_stats(rot_diffs, trans_diffs, frames_idx, rel_or_abs):
+    startframe = frames_idx[0]
+    endframe = frames_idx[-1]
+    num_frames = endframe - startframe
+    rots_error_sum = np.sum(rot_diffs)
+    rot_error_avg = rots_error_sum / num_frames
+    tx_error, ty_error, tz_error = np.sum(trans_diffs, axis=1)
+    trans_error_sum = + tx_error + ty_error + tz_error
+    trans_error_avg = trans_error_sum / num_frames
+    stats = [f"avg. {rel_or_abs} rotation error per frame = {rots_error_sum:.1f}/{num_frames} = {rot_error_avg:.2f} deg",
+             f"sum of {rel_or_abs} translation errors frames [{startframe},{endframe}] = {tx_error:.1f} + {ty_error:.1f} + {tz_error:.1f} = {trans_error_sum:.1f} meters",
+             f"avg. {rel_or_abs} translation error per frame = {trans_error_sum:.1f}/{num_frames} = {trans_error_avg:.2f} meters"]
+    return stats, rots_error_sum,  trans_error_sum
 
-def get_consistent_with_extrinsic(kp_li, kp_ri, pc_lr_i_in_l0, ext_l0_to_li, ext_l_to_r, k):
+def get_consistent_with_extrinsic(kp_l, kp_r, pc, ext_w_to_c, ext_l_to_r, k, reproj_thresh=2):
     """
-    The function filter points thus: We have:
-    (1) matching pixels in left (kp_li) and right (kp_ri) (we believe with no false matches)
-    (2) uncertain locations of their 3D location (in world_left_0 CS),
-    (3) Extrinsics matrices: ext_l0_to_li and ext_l_to_r that we belive is correct.
-    We project pc_in_l0 to pixels_left_i and pixels_right_i using the ext_mats, to get proj_pixels_left_i and proj_pixels_right_i.
+    Computes the inliers of kp-pc match w.r.t. extrinsic matrices.
+    The inputs are:
+    (1) matching pixels in left (kp_l) and right (kp_r) images, we believe with no incorrect matches
+    (2) uncertain locations of their 3D location (in world CS),
+    (3) Extrinsics matrices: ext world_to_cam and ext_left_to_right that we belive is correct.
+    We project pc to pixels_left and pixels_right, using the ext_mats, to get proj_pixels_left and proj_pixels_right.
     We then filter, so we keep only those points that're consistent with the ext_mats. That is, their world-point is projected close
-    to both their pixels_left_i and pixels_right_i locations.
-    :param kp_li/ri: (2,n)  of keypoints in pixels_left_i / pixels_right_i
-    :param pc_lr_i_in_l0: (3,n) points in world (left0) CS, matching estimates of kp_li and kp_ri real world locations.
-    :param ext_l0_to_li: (4,4) extrinsic matrix from world_left_0 to world_left_i
-    :param ext_l_to_r: (4,4) extrinsic matrix from world_left_i to world_right_i
+    to both their pixels_left and pixels_right locations.
+    :param kp_l/r: (2,n)  matching keypoints in pixels_left / pixels_right
+    :param pc: (3,n) points in world CS, matching estimates of kp_l and kp_r real world locations.
+    :param ext_w_to_c: (4,4) extrinsic matrix from world to left camera
+    :param ext_l_to_r: (4,4) extrinsic matrix from left camera to right camera
     :param k: (4,4) intrinsics camera matrix
     :return inliers_bool - boolean ndarray (n,), with True in indices of points that're consistent
     """
-    assert kp_li.shape[1] == kp_ri.shape[1] == pc_lr_i_in_l0.shape[1]
-    if pc_lr_i_in_l0.shape[0] == 3:
-        pc_lr_i_in_l0 = np.vstack((pc_lr_i_in_l0, np.ones(pc_lr_i_in_l0.shape[1])))  # (4,n)
+    assert kp_l.shape[1] == kp_r.shape[1] == pc.shape[1]
+    if pc.shape[0] == 3:
+        pc = np.vstack((pc, np.ones(pc.shape[1])))  # (4,n)
 
-    proj_l0_to_li = k @ ext_l0_to_li  # (3,4) # from world_left_0 to pixels_left_i
-    ext_l0_to_ri = ext_l_to_r @ ext_l0_to_li  # (4,4) # from world_left_0 to world_right_i
-    proj_l0_to_ri = k @ ext_l0_to_ri  # (3,4) # from world_left_0 to pixels_right_i
+    proj_w_to_l = k @ ext_w_to_c  # (3,4) # from world to pixels_left
+    ext_w_to_r = ext_l_to_r @ ext_w_to_c  # (4,4) # from world to camera_right
+    proj_w_to_r = k @ ext_w_to_r  # (3,4) # from word to pixels_right
 
-    # project pc_lr_i_in_l0 to pixels_left_i
-    projected_li = proj_l0_to_li @ pc_lr_i_in_l0  # (3,n)
-    projected_li = projected_li[0:2] / projected_li[-1]  # (2,n)
+    # project pc to pixels_left
+    projected_l = proj_w_to_l @ pc  # (3,n)
+    projected_l = projected_l[0:2] / projected_l[-1]  # (2,n)
 
-    # project pc_lr_i_in_l0 to pixels_right_i
-    projected_ri = proj_l0_to_ri @ pc_lr_i_in_l0  # (3,n)
-    projected_ri = projected_ri[0:2] / projected_ri[-1]  # (2,n)
+    # project pc to pixels_right
+    projected_r = proj_w_to_r @ pc  # (3,n)
+    projected_r = projected_r[0:2] / projected_r[-1]  # (2,n)
 
-    proj_errors_li = np.linalg.norm((kp_li - projected_li), axis=0) # L2 norm
-    proj_errors_ri = np.linalg.norm((kp_ri - projected_ri), axis=0)  # L2 norm
-    REPROJ_THRESH = 2
-    bool_li = proj_errors_ri <= REPROJ_THRESH
-    bool_ri = proj_errors_ri <= REPROJ_THRESH
-    inliers_bool = bool_li * bool_ri # (n,)
-    return inliers_bool, proj_errors_ri, proj_errors_ri
+    proj_errors_l = np.linalg.norm((kp_l - projected_l), axis=0) # L2 norm
+    proj_errors_r = np.linalg.norm((kp_r - projected_r), axis=0)  # L2 norm
+    bool_l = proj_errors_l <= reproj_thresh
+    bool_r = proj_errors_r <= reproj_thresh
+    inliers_bool = bool_l * bool_r # (n,)
+    return inliers_bool, proj_errors_l, proj_errors_r
 
-def filt_np(bool_array, *nd_arrays):
-    """
-    :param bool_array: boolean array of size n
-    :param nd_arrays: ndarray of size (?,n)
-    :return: the arrays filters
-    """
-    for arr in nd_arrays:
-        assert len(bool_array) == arr.shape[1]
-    return [arr[:,bool_array] for arr in nd_arrays]
-
-
-def filter_with_extrinsics(kp_li, desc_li, kp_ri, pc_in_l0, ext_l0_to_li, ext_l_to_r, k):
-    # TODO i probably should use this function
-    inliers_bool,_, _ = get_consistent_with_extrinsic(kp_li, kp_ri, pc_in_l0, ext_l0_to_li, ext_l_to_r, k)
-    return filt_np(inliers_bool, kp_li, desc_li, kp_ri, pc_in_l0)
+def get_rot_trans_diffs_from_mats(exts_A, exts_B):
+    rots_A, trans_A = get_r_t_s(exts_A)
+    rots_B, trans_B = get_r_t_s(exts_B)
+    return get_rot_trans_diffs(rots_A, rots_B, trans_A, trans_B)
 
 def get_rot_trans_diffs(rots_A, rots_B, trans_vecs_A, trans_vecs_B):
     """
     :param rots: list of rotation matrices 
     :param trans_vecs: (3,n) 
     """
-    rot_diffs_relative = [rotation_matrices_diff(r, q) for r,q in zip (rots_A, rots_B)]
-    rot_diffs_relative = np.array(rot_diffs_relative)
-    trans_diffs_relative = np.abs(trans_vecs_A - trans_vecs_B)
-    return rot_diffs_relative, trans_diffs_relative
-
-def get_rot_trans_diffs_from_ext_mats2(ext_li_to_l0_A, ext_li_to_l0_B):
-    rj_to_ri_s_A, tj_to_ti_s_A  = rot_trans_j_to_i_s(ext_li_to_l0_A)
-    rj_to_ri_s_B, tj_to_ti_s_B  = rot_trans_j_to_i_s(ext_li_to_l0_B)
-    return get_rot_trans_diffs(rj_to_ri_s_A, rj_to_ri_s_B, tj_to_ti_s_A, tj_to_ti_s_B)
+    rot_diffs = [rotation_matrices_diff(r, q) for r,q in zip (rots_A, rots_B)]
+    rot_diffs = np.array(rot_diffs)
+    trans_diffs = np.abs(trans_vecs_A - trans_vecs_B)
+    return rot_diffs, trans_diffs
 
 def rot_mat_2_euler_angles(R):
     """ returns x,y,z in radians"""
@@ -325,11 +319,43 @@ def t2v(rot_mat, trans_vec):
     res = np.concatenate((rot_in_rads, trans_vec))
     return res
 
-if __name__=="__main__":
-    import kitti
-    kitti_dws = kitti.read_dws() # (3,2761)
-    a=3
-    pass
+def concat_ci_to_cj_s(ext_ci_to_cj_s):
+    ext_c0_to_ci_s = [ext_ci_to_cj_s[0]]
+    for j in range(1, len(ext_ci_to_cj_s)): # i=j-1
+        ext_ci_to_cj = ext_ci_to_cj_s[j]
+        ext_c0_to_cj = ext_ci_to_cj @ ext_c0_to_ci_s[-1]
+        ext_c0_to_ci_s.append(ext_c0_to_cj)
+    return ext_c0_to_ci_s
+
+def concat_and_inv_ci_to_cj_s(ext_ci_to_cj_s):
+    ext_c0_to_ci_s = concat_ci_to_cj_s(ext_ci_to_cj_s)
+    ext_ci_to_c0_s = inv_extrinsics_mult(ext_c0_to_ci_s)
+    return ext_ci_to_c0_s
+
+def concat_cj_to_ci_s(ext_cj_to_ci_s):
+    ext_ci_to_c0_s = [ext_cj_to_ci_s[0]]
+    for j in range(1, len(ext_cj_to_ci_s)):  # i=j-1
+        ext_cj_to_ci = ext_cj_to_ci_s[j]
+        ext_cj_to_c0 = ext_ci_to_c0_s[-1] @ ext_cj_to_ci
+        ext_ci_to_c0_s.append(ext_cj_to_c0)
+    return ext_ci_to_c0_s
+
+######################### NUMPY #########################
+def cumsum_mats(list_of_mats):
+    cumsum_arr = np.cumsum(list_of_mats, axis=0)
+    cumsum_list = np.split(cumsum_arr, len(list_of_mats), axis=0)
+    cumsum_list = [np.squeeze(mat) for mat in cumsum_list]
+    return cumsum_list
+
+def filt_np(bool_array, *nd_arrays):
+    """
+    :param bool_array: boolean array of size n
+    :param nd_arrays: ndarray of size (?,n)
+    :return: the arrays filtered
+    """
+    for arr in nd_arrays:
+        assert len(bool_array) == arr.shape[1]
+    return [arr[:,bool_array] for arr in nd_arrays]
 
 ######################### OTHERS ##################################
 def get_perc_largest_indices(arr, perc):
@@ -357,6 +383,10 @@ def lund(string):
 def rund(string):
     return f'{string}_' if string else ""
 
+def get_color(i):
+    c = ['black', 'cyan', 'orange', 'purple','brown','silver','gold', 'indigo', 'tomato', 'seashell', 'rosybrown', 'plum', 'limegreen']
+    return c[i % len(c)]
+
 #########################   Visualization   #########################
 def plt_disp_img(img, name="", save=False):
     plt.axis('off'); plt.margins(0, 0)
@@ -381,6 +411,7 @@ def cv_disp_img(img, title='', save=False):
     return ('_'+title+'_') if title else ""
 
 def bgr_rgb(img):
+
     if img.ndim != 3:
         print("error rgb_bgr")
         return img
