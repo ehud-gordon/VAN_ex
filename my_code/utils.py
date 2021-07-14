@@ -1,10 +1,9 @@
-import pickle
-
-import matplotlib.pyplot as plt
-import cv2
 import numpy as np
+import cv2
+import matplotlib.pyplot as plt
 
-import os
+import os, re
+import pickle
 from datetime import datetime
 import re
 import shutil
@@ -39,10 +38,21 @@ def clear_path(path):
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
 
+def one_up(s):
+    pat = re.compile(r'(\d+)')
+    match = re.match(pat, s[::-1])
+    if not match:
+        return s+'0'
+    prev_num = match.group(1)[::-1]
+    new_num = int(prev_num) + 1
+    res = s[:(-match.end())] + str(new_num)
+    return res
+
 def get_avail_path(path):
     while os.path.exists(path):
         folder,name,ext = dir_name_ext(path)
-        path = os.path.join(folder, name+'0'+ext)
+        new_name = one_up(name)
+        path = os.path.join(folder, new_name+ext)
     return path
 
 def get_time_path():
@@ -94,7 +104,8 @@ def serialize_ext_li_to_lj_s(dir_path, ext_li_to_lj_s, title):
 def deserialize_ext_li_to_lj_s(pkl_path):
     with open(pkl_path, 'rb') as handle:
         d = pickle.load(handle)
-    return d['ext_li_to_lj_s']
+    ext_li_to_lj_s = d['ext_li_to_lj_s']
+    return ext_li_to_lj_s
 
 #########################   Geometry   #########################
 def rodrigues_to_mat(rvec,tvec):
@@ -267,10 +278,20 @@ def get_consistent_with_extrinsic(kp_l, kp_r, pc, ext_w_to_c, ext_l_to_r, k, rep
     inliers_bool = bool_l * bool_r # (n,)
     return inliers_bool, proj_errors_l, proj_errors_r
 
-def get_rot_trans_diffs_from_mats(exts_A, exts_B):
-    rots_A, trans_A = get_r_t_s(exts_A)
-    rots_B, trans_B = get_r_t_s(exts_B)
-    return get_rot_trans_diffs(rots_A, rots_B, trans_A, trans_B)
+def get_rot_trans_diffs_from_mats(exts_gt, *exts_B):
+    """
+    :param exts_gt: a list of extrinsics matrices that we compare to (ground truth)
+    """
+    for exts in exts_B:
+        assert len(exts_B) == len (exts_B)
+    rots_gt, trans_gt = get_r_t_s(exts_gt)
+    rots_diffs_res, trans_diffs_res = [], []
+    for exts in exts_B:
+        rots_B, trans_B = get_r_t_s(exts)
+        rots_diffs, trans_diffs = get_rot_trans_diffs(rots_gt, rots_B, trans_gt, trans_B)
+        rots_diffs_res.append(rots_diffs)
+        trans_diffs_res.append(trans_diffs)
+    return rots_diffs_res, trans_diffs_res
 
 def get_rot_trans_diffs(rots_A, rots_B, trans_vecs_A, trans_vecs_B):
     """

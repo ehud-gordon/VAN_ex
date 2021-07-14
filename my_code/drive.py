@@ -63,6 +63,12 @@ class Drive:
     
     def output_results(self, kp_lj_inlier_matches, ext_li_to_lj_s, tracks_db, start_time):
         args = self.args
+        stats = ['**STAGE2**', str(args)]
+        # serialize tracks and ext
+        if args.store_tracks:
+            self.stage2_tracks_path = tracks_db.serialize(args.stage2_dir, f'stage2_tracks_{args.endframe}')
+        utils.serialize_ext_li_to_lj_s(args.stage2_dir, ext_li_to_lj_s, title=f'stage2_{args.endframe}')
+
         ext_li_to_l0_s = utils.concat_and_inv_ci_to_cj_s(ext_li_to_lj_s)
         # output important plots and stats
         rots_total_error, trans_total_error = results.output_results(args.out_path, ext_li_to_l0_s, args.frames_idx, "stage_2",
@@ -72,19 +78,20 @@ class Drive:
         args.stage2_dir =  os.path.join(args.out_path, 'stage2' + f'_{trans_total_error:.1f}_{rots_total_error:.1f}')
         os.makedirs(args.stage2_dir)
 
-
-        # write stats
-        stats = ['**STAGE2**', str(args)]
-        with open (os.path.join(args.stage2_dir ,'stats_stage2.txt'), 'w') as f:
-            f.writelines('\n'.join(stats))
-
-        # serialize tracks and ext
-        if args.store_tracks:
-            self.stage2_tracks_path = tracks_db.serialize(args.stage2_dir, f'stage2_tracks_{args.endframe}')
-        utils.serialize_ext_li_to_lj_s(args.stage2_dir, ext_li_to_lj_s, title=f'stage2_{args.endframe}')
         
+        # output keypoints, matches, inliers counts
         kp_lj_inlier_matches = np.array(kp_lj_inlier_matches).T
+        avg_num_of_keypoints = np.mean(kp_lj_inlier_matches[0])
+        matches_frac_out_of_keypoints = np.mean( kp_lj_inlier_matches[2] / kp_lj_inlier_matches[0])
+        inliers_frac_out_of_matches = np.mean(kp_lj_inlier_matches[1] / kp_lj_inlier_matches[2])
         tmp_d = {'kp_lj':kp_lj_inlier_matches[0], 'li_lj_matches':kp_lj_inlier_matches[2], 'pnp_inliers':kp_lj_inlier_matches[1]}
         tmp_title = f"count_kp_left1_matches_inliers_{args.startframe}_{args.endframe}"
         my_plot.plotly_scatters(tmp_d, x=args.frames_idx[1:], title=tmp_title,plot_dir=args.stage2_dir, plot=args.plot, save=args.save, yaxis="count")
-        # my_plot.plt_kp_inlier_matches(kp_lj_inlier_matches, args.stage2_dir, plot=args.plot)
+        stats.append(f'avg. number of detected keypoints: {avg_num_of_keypoints:.0f}', 
+                     f'avg. percent of matched out of keypoints {matches_frac_out_of_keypoints:.0%}',
+                     f'avg. percent of inliers out of matches {inliers_frac_out_of_matches:.0%}'
+                     )
+
+        # write stats
+        with open (os.path.join(args.stage2_dir ,'stats_stage2.txt'), 'w') as f:
+            f.writelines('\n'.join(stats))

@@ -10,6 +10,7 @@ from gtsam.symbol_shorthand import X
 import os, pickle
 
 import utils, my_plot
+from utils import und_title
 
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
@@ -70,6 +71,23 @@ def to_Pose3(cn_to_ci):
         cn_to_ci = Pose3(cn_to_ci)
     return cn_to_ci
 
+def extract_to_c0_from_to_dict(from_to_dict, keyframes_idx, as_ext=True):
+    num_frames = len(keyframes_idx)
+    cj_to_ci_list = [from_to_dict[0][0]]
+    for j in range(1, num_frames):
+        cj_to_ci_list.append(from_to_dict[j][j-1])
+    
+    if type(cj_to_ci_list[0]).__module__ == np.__name__:
+        ext_ci_to_c0_s = utils.concat_cj_to_ci_s(cj_to_ci_list)
+    else:
+        ext_cj_to_ci_s = [pose.matrix() for pose in cj_to_ci_list]
+        ext_ci_to_c0_s = utils.concat_cj_to_ci_s(ext_cj_to_ci_s)
+    if as_ext:
+        return ext_ci_to_c0_s
+    else:
+        return [Pose3(mat) for mat in ext_ci_to_c0_s]
+
+
 #### MARGINALS ####
 def extract_cov_ln_cond_li_from_marginals(marginals, i_frame, n_frame): # 20, 10
     """ return Sigma n|i """
@@ -123,7 +141,30 @@ def from_to_ext_dict(from_to_Pose3_dict):
             from_to_ext_dict[n][i] = Pose3_ln_to_li.matrix()
     return from_to_ext_dict
 
-def serialize_stage5(dir_path, from_to_Pose3_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, keyframes_idx, title):
+def serialize_stage4(dir_path, s4_ext_li_to_l0_s, s4_cov_lj_cond_li_dict, marg_covs, cov_li_cond_l0_s, keyframes_idx, title):
+    endframe = keyframes_idx[-1]
+    pkl_path = os.path.join(dir_path, f'{title}_{endframe}.pkl')
+    d = dict()
+    d['s4_ext_li_to_l0_s'] = s4_ext_li_to_l0_s
+    d['s4_cov_lj_cond_li_dict'] = s4_cov_lj_cond_li_dict
+    d['marg_covs'] = marg_covs
+    d['cov_li_cond_l0_s'] = cov_li_cond_l0_s
+    d['keyframes_idx'] = keyframes_idx
+    with open(pkl_path, 'wb') as handle:
+        pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    return pkl_path
+
+def deserialize_stage4(pkl_path):
+    with open(pkl_path, 'rb') as handle:
+        d = pickle.load(handle)
+    s4_ext_li_to_l0_s = d['s4_ext_li_to_l0_s']
+    s4_cov_lj_cond_li_dict = d['s4_cov_lj_cond_li_dict']
+    marg_covs = d['marg_covs']
+    cov_li_cond_l0_s = d['cov_li_cond_l0_s']
+    keyframes_idx = d['keyframes_idx']
+    return s4_ext_li_to_l0_s, s4_cov_lj_cond_li_dict, marg_covs, cov_li_cond_l0_s, keyframes_idx
+
+def serialize_stage5(dir_path, from_to_Pose3_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx, title):
     endframe = keyframes_idx[-1]
     new_from_to_ext_dict = from_to_ext_dict(from_to_Pose3_dict)
     pkl_path = os.path.join(dir_path, f'{title}_{endframe}.pkl')
@@ -132,20 +173,30 @@ def serialize_stage5(dir_path, from_to_Pose3_dict, cov_ln_cond_li_dict, det_ln_c
     d['cov_ln_cond_li_dict'] = cov_ln_cond_li_dict
     d['det_ln_cond_li_arr'] = det_ln_cond_li_arr
     d['keyframes_idx'] = keyframes_idx
+    d['marg_covs'] = marg_covs
+    d['cov_li_cond_l0_s'] = cov_li_cond_l0_s
     with open(pkl_path, 'wb') as handle:
         pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return pkl_path
 
-def deserialize_stage5(pkl_path):
+def deserialize_stage5(pkl_path, as_ext=False, concat=False):
     with open(pkl_path, 'rb') as handle:
         d = pickle.load(handle)
     new_from_to_ext_dict = d['new_from_to_ext_dict']
-    new_from_to_Pose3_dict = from_to_Pose3_dict(new_from_to_ext_dict)
     cov_ln_cond_li_dict = d['cov_ln_cond_li_dict'] 
     det_ln_cond_li_arr = d['det_ln_cond_li_arr']
     keyframes_idx = d['keyframes_idx']
-    # return new_from_to_ext_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, keyframes_idx
-    return new_from_to_Pose3_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, keyframes_idx
+    marg_covs = d['marg_covs']
+    cov_li_cond_l0_s = d['cov_li_cond_l0_s']
+    if concat: 
+        ext_lj_to_li_s =[new_from_to_ext_dict[0][0]]
+        ext_lj_to_li_s += [ new_from_to_ext_dict[j][j-1] for j in range(1,len(keyframes_idx))]
+        ext_li_to_l0_s = utils.concat_cj_to_ci_s(ext_lj_to_li_s)
+        return ext_li_to_l0_s, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
+    if as_ext:
+        return new_from_to_ext_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
+    new_from_to_Pose3_dict = from_to_Pose3_dict(new_from_to_ext_dict)
+    return new_from_to_Pose3_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
 
 #### VISUALIZATION ######
 def single_bundle_plots(Pose3_c_to_w_s_points, plot_dir, startframe, endframe, marginals=None):
@@ -179,6 +230,67 @@ def plot_2d_cams_points_from_gtsam_values(Pose3_c_to_w_s_points, plot_dir, endfr
     path = os.path.join(plot_dir, f'2d_cams_points_{startframe}_{endframe}' + '.png')
     plt.savefig(path, bbox_inches='tight', pad_inches=0)
 
+def get_ellipse_trace(ext_cam_to_world, P, name=""):
+    """
+    :param pose: Pose3 of gtsam, cam to world. 
+    :param P: (6,6) covariance matrix of this pose
+    This code is copied from gtsam.utils.plot.
+    """
+    gRp, origin = utils.get_r_t(ext_cam_to_world)
+    pPp = P[3:6, 3:6]
+    gPp = gRp @ pPp @ gRp.T
+    k = 11.82
+    U, S, _ = np.linalg.svd(gPp)
+
+    radii = k * np.sqrt(S)
+    radii = radii
+    rx, ry, rz = radii
+
+    # generate data for "unrotated" ellipsoid
+    xc, yc, zc = g_plot.ellipsoid(0, 0, 0, rx, ry, rz, 8)
+
+    # rotate data with orientation matrix U and center c
+    data = np.kron(U[:, 0:1], xc) + np.kron(U[:, 1:2], yc) + np.kron(U[:, 2:3], zc)
+    n = data.shape[1]
+    x = data[0:n, :] + origin[0]
+    y = data[n:2*n, :] + origin[1]
+    z = data[2*n:, :] + origin[2]
+
+    ellipse_trace = go.Surface(x=x, y=z, z=y, opacity=0.5, showscale=False, showlegend=(name != ""), name=name)
+    return ellipse_trace
+
+def plotly_cond_trajectory2(ext_ci_to_c0_s, cumsum_cov_cj_cond_ci, name, frames_idx, title="", plot_dir="", save=True, plot=False):
+    dws= utils.get_dws_from_cam_to_world_s(ext_ci_to_c0_s)
+    num_frames = dws.shape[1] # 11
+    startframe = frames_idx[0]
+    frames_idx = np.array(frames_idx) if frames_idx is not None else np.arange(0,num_frames)  # [0-10]
+
+    fig = go.Figure()
+    # create fixed scatter
+    trace = go.Scatter3d(x=dws[0], y=dws[2], z=dws[1], name=name, mode='markers+lines', line=dict(color='green'), marker=dict(size=3.5, color='green', opacity=0.5), hovertemplate="(%{x:.1f}, %{z:.1f}, %{y:.1f}) f=%{text}", text=frames_idx)
+    # trace = go.Scatter3d(x=dws[0], y=dws[1], z=dws[2], name=name, mode='markers+lines', line=dict(color='green'), marker=dict(size=3.5, color='green', opacity=0.5), hovertemplate="(%{x:.1f}, %{y:.1f}, %{z:.1f}) f=%{text}", text=frames_idx)
+    
+    fig.add_trace(trace)
+    camera = dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0.2, y=-2, z=0.5)); fig.update_layout(scene_camera=camera)
+    
+    # add elipsoids
+    for j in range(1, len(ext_ci_to_c0_s), 2):
+        ext_lj_to_l0 = ext_ci_to_c0_s[j]
+        P= cumsum_cov_cj_cond_ci[j-1]
+
+        ellipse_trace = get_ellipse_trace(ext_lj_to_l0, P)
+        fig.add_trace(ellipse_trace)
+        
+    
+    # fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), width=850, height=850)
+    fig.update_layout(showlegend=True)
+    title1 = f"left camera location {title}"
+    fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
+    fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='data')); fig.update_scenes(zaxis_autorange="reversed")
+    my_plot.plotly_save_fig(fig, f'cond_traj_plotly_data_{title}', plot_dir, save, plot)
+    fig.update_layout(scene=dict(aspectmode='cube'))
+    my_plot.plotly_save_fig(fig, f'cond_traj_plotly_cube_{title}', plot_dir, save, plot)
+
 def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, name, frames_idx, title="", plot_dir="", save=True, plot=False):
     ext_c_to_w_s = [pose.matrix() for pose in Pose3_c_to_w_list]
     dws= utils.get_dws_from_cam_to_world_s(ext_c_to_w_s)
@@ -203,29 +315,8 @@ def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, 
         P = extract_cov_ln_cond_li_from_marginals(marginals, 0, j_kf)
         # P= cumsum_cov_cj_cond_ci[j-1]
 
-        gRp = pose.rotation().matrix()  # rotation from pose to global
-        origin = pose.translation()
-        pPp = P[3:6, 3:6]
-        gPp = gRp @ pPp @ gRp.T
-        k = 11.82
-        U, S, _ = np.linalg.svd(gPp)
-
-        radii = k * np.sqrt(S)
-        radii = radii
-        rx, ry, rz = radii
-
-        # generate data for "unrotated" ellipsoid
-        xc, yc, zc = g_plot.ellipsoid(0, 0, 0, rx, ry, rz, 8)
-
-        # rotate data with orientation matrix U and center c
-        data = np.kron(U[:, 0:1], xc) + np.kron(U[:, 1:2], yc) + np.kron(U[:, 2:3], zc)
-        n = data.shape[1]
-        x = data[0:n, :] + origin[0]
-        y = data[n:2*n, :] + origin[1]
-        z = data[2*n:, :] + origin[2]
-
-        elipse_trace = go.Surface(x=x, y=z, z=y, opacity=0.5, showscale=False, showlegend=False, name=f"el_{j}")
-        fig.add_trace(elipse_trace)
+        ellipse_trace = get_ellipse_trace(pose, P)
+        fig.add_trace(ellipse_trace)
         
     
     # fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), width=850, height=850)
@@ -235,6 +326,32 @@ def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, 
     # fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Y', zaxis_title='Z', aspectmode='cube'))
     fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='cube')); fig.update_scenes(zaxis_autorange="reversed")
     my_plot.plotly_save_fig(fig, f'cond_traj_plotly_{title}', plot_dir, save, plot)
+
+def plt_plot_cov_trajectory(fignum, Pose3_c_to_w_list, cov_list, frames_idx, title="", plot_dir="", save=True, plot=False):
+    fig = plt.figure(fignum)
+    axes = fig.gca(projection='3d')
+    startframe = frames_idx[0]; endframe= frames_idx[-1]
+    num_frames = len(frames_idx)
+    axes.set_xlabel("X"); axes.set_ylabel("Y");axes.set_zlabel("Z")
+    for i in range(0, num_frames-1):
+        # if i %20 != 0: continue
+        pose = Pose3_c_to_w_list[i]
+        P = cov_list[i]
+        if i == 0:
+            g_plot.plot_pose3_on_axes(axes, pose, axis_length=1)
+        else:
+            g_plot.plot_pose3_on_axes(axes, pose, P=P, axis_length=1)
+
+    fig.suptitle(f"{title} ellipses of covariance conditional on {startframe}, between [{startframe}-{endframe}]")
+    g_plot.set_axes_equal(fignum) # dubious
+
+    if save:
+        path = os.path.join(plot_dir, f"elips_cov{und_title(title)}{endframe}.png")
+        plt.savefig(path, bbox_inches='tight', pad_inches=0)
+    if plot:
+        plt.show()
+
+    # plt.close('all')
 
 def my_cond_plot_trajectory(fignum, Pose3_c_to_w_s, marginals, startframe, endframe, plot_dir):
     fig = plt.figure(fignum)

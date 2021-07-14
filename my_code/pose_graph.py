@@ -4,6 +4,7 @@ import gtsam
 from gtsam import Pose3
 from gtsam.symbol_shorthand import X
 import gtsam_utils as g_utils
+from collections import defaultdict
 
 
 def extract_ext_ci_to_c0_s_from_values(values, keyframes_idx):
@@ -15,16 +16,19 @@ def extract_Pose3_list_from_values(values, keyframes_idx):
     return Pose3_list
     
 def extract_ext_cond_from_values_marginals(values, marginals, keyframes_idx):
-    ext_li_to_l0_s = []
+    ext_ci_to_c0_s = []
     for i_kf in keyframes_idx:
-        Pose3_li_to_l0 = values.atPose3( X(i_kf))
-        ext_li_to_l0_s.append(Pose3_li_to_l0.matrix())
+        Pose3_ci_to_c0 = values.atPose3( X(i_kf))
+        ext_ci_to_c0_s.append(Pose3_ci_to_c0.matrix())
 
-    cov_lj_cond_li_s = []
-    for j_kf, i_kf in zip(keyframes_idx[1:], keyframes_idx[:-1]):
-        cov_lj_cond_li = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, i_kf, j_kf)
-        cov_lj_cond_li_s.append(cov_lj_cond_li)
-    return ext_li_to_l0_s, cov_lj_cond_li_s
+    cov_cj_cond_ci_dict = defaultdict(dict)
+    for j in range(1, len(keyframes_idx)):
+        i_kf, j_kf = keyframes_idx[j-1], keyframes_idx[j]
+        cov_cj_cond_ci = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, i_kf, j_kf); 
+        cov_cj_cond_ci_dict[j][j-1] = cov_cj_cond_ci
+        cov_ci_cond_cj = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, j_kf, i_kf);
+        cov_cj_cond_ci_dict[j-1][j] = cov_ci_cond_cj
+    return ext_ci_to_c0_s, cov_cj_cond_ci_dict
 
 
 

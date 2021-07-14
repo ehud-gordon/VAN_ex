@@ -1,11 +1,6 @@
-import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import ConnectionPatch
+import cv2
 
-import os
-
-import kitti
 import utils
 
 def pnp(k, pc, kp, size):

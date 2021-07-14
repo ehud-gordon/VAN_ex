@@ -9,8 +9,10 @@ np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dic
 
 
 
-def output_results(out_path, ext_li_to_l0_s, frames_idx,  title, start_time, plot=False, save=True):
-    assert len(frames_idx) == len(ext_li_to_l0_s)
+def output_results(out_path, ext_li_to_l0_s_dict, frames_idx,  title, start_time, plot=False, save=True):
+    ext_li_to_l0_s_mult = []
+    for ext_li_to_l0_s in ext_li_to_l0_s_mult:
+        assert len(frames_idx) == len(ext_li_to_l0_s)
     elapsed_time = time.time() - start_time
     # make results dir
     startframe = frames_idx[0]
@@ -20,11 +22,10 @@ def output_results(out_path, ext_li_to_l0_s, frames_idx,  title, start_time, plo
     stats = [f'** {title.upper()} **']
     # kitti
     ext_li_to_l0_s_kitti = kitti.read_poses_cam_to_world(frames_idx)
+    rj_to_ri_s_kitti, tj_to_ti_s_kitti = utils.rot_trans_j_to_i_s(ext_li_to_l0_s_kitti)
     if startframe != 0: ext_li_to_l0_s_kitti = utils.make_relative_to_ci(ext_li_to_l0_s_kitti)
     # compute relative rotation translation diffs
-    rj_to_ri_s_mine, tj_to_ti_s_mine = utils.rot_trans_j_to_i_s(ext_li_to_l0_s)
-    rj_to_ri_s_kitti, tj_to_ti_s_kitti = utils.rot_trans_j_to_i_s(ext_li_to_l0_s_kitti)
-    rot_diffs_relative, trans_diffs_relative = utils.get_rot_trans_diffs( rj_to_ri_s_mine, rj_to_ri_s_kitti, tj_to_ti_s_mine, tj_to_ti_s_kitti )
+    rot_diffs_rel_mult, trans_diffs_rel_mult = utils.get_rot_trans_diffs_from_mats(ext_li_to_l0_s_kitti, *ext_li_to_l0_s_mult)
     # normalize by number of frames
     sizes = np.array(frames_idx)[1:] - np.array(frames_idx)[:-1]
     # output relative rots_trans stats and plots

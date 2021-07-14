@@ -38,6 +38,8 @@ class LoopClosure:
         s3_ext_lj_to_li_s = [pose.matrix() for pose in s3_Pose3_lj_to_li_list]
         self.s3_ext_li_to_l0_s = utils.concat_cj_to_ci_s(s3_ext_lj_to_li_s)
         self.s3_dws = utils.get_dws_from_cam_to_world_s(self.s3_ext_li_to_l0_s)
+        self.marg_covs = []
+        self.cov_li_cond_l0_s = []
         # kitti
         kitti_dws = kitti.read_dws(self.keyframes_idx)
         self.sd_list = [(self.s3_dws, 's3', 'red'), (kitti_dws, 'kitti', 'green')]
@@ -128,6 +130,10 @@ class LoopClosure:
                 i_kf = self.keyframes_idx[i]
                 self.from_to_Pose3_dict[n][i] = values.atPose3(X(i_kf)).between( values.atPose3(X(n_kf)) )
         
+        for i_kf in self.keyframes_idx:
+            self.marg_covs.append(marginals.marginalCovariance(X(i_kf)))
+            cov_lj_cond_l0 = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, 0, i_kf)
+            self.cov_li_cond_l0_s.append(cov_lj_cond_l0)
         # update cov and det_dits
         # self.det_ln_cond_li_arr = np.zeros((self.num_frames, self.num_frames))
         # for n in self.cov_ln_cond_li_dict:
@@ -190,7 +196,6 @@ class LoopClosure:
                 self.stats.append(msg); print(msg); self.errors_before.append(error_before); self.errors_after.append(error_after)
                 self.update_after_pose_graph(pose_values, pose_marginals)
                 det_dists_ln_cond_li, pred_to_n = self.output_results()
-                n+=4
                 print(f'jumping to frame={self.keyframes_idx[n+1]}')
             n+=1
         my_plot.pose_graph_llsd(self.keyframes_idx, llsd_inliers, llsd_mahal, llsd_dets, title="in_run", plot_dir=self.stage5_dir)
@@ -277,12 +282,13 @@ class LoopClosure:
             num_steps_to_zero.append(len(simp_path)-1 )
 
         dijk_dws = utils.get_dws_from_cam_to_world_s(dijk_ext_li_to_l0_s)
-        dijk_sd = (dijk_dws, f'dijk_dws_{self.num_of_lc}', 'pink')
+        dijk_sd = (dijk_dws, f'dijk_dws_{self.num_of_lc}', 'rgb(255,7,137)')
         my_plot.plotly_scatter(x=self.keyframes_idx, y=dijk_det_li_on_l0_s, yaxis='det of cov', plot_dir=self.cur_lc_dir,
                                title=f"dijk_det_cov_li_cond_on_l0_s_{title}", save=True, plot=False)
         my_plot.plotly_scatter(x=self.keyframes_idx, y=num_steps_to_zero, yaxis='num of steps to zero', plot_dir=self.cur_lc_dir,
                                title=f"dijk_length_path_to_zero_{title}", save=True, plot=False)
         tmp_sd = self.sd_list + [dijk_sd]
+        my_plot.plotly_2D_cams(tmp_sd, title=f"dijk_{title}", plot_dir=self.cur_lc_dir, frames_idx=self.keyframes_idx, save=True, plot=False)
         my_plot.plotly_3D_cams(tmp_sd, title=f"dijk_{title}", plot_dir=self.cur_lc_dir, frames_idx=self.keyframes_idx, save=True, plot=False)
         
         return dijk_ext_li_to_l0_s, dijk_cov_li_on_l0_s, dijk_det_li_on_l0_s, det_dists_ln_cond_li, pred_to_n
@@ -291,9 +297,11 @@ class LoopClosure:
         # Create new stage5 folder
         self.cur_lc_dir = os.path.join(self.out_path, f'stage5_{self.num_of_lc}')
         utils.make_dir_if_needed(self.cur_lc_dir)
-        # serialzie stage 5
-        g_utils.serialize_stage5( self.cur_lc_dir, self.from_to_Pose3_dict, self.cov_ln_cond_li_dict, self.det_ln_cond_li_arr,
-                                 self.keyframes_idx, title=f'stage5_{self.num_of_lc}')
+        # serialzie stage 5            
+        g_utils.serialize_stage5(self.cur_lc_dir, self.from_to_Pose3_dict, self.cov_ln_cond_li_dict, self.det_ln_cond_li_arr,
+                                 self.marg_covs, self.cov_li_cond_l0_s, self.keyframes_idx, title=f'stage5_{self.num_of_lc}')
+        self.marg_covs =[]
+        self.cov_li_cond_l0_s = []
         
         
         # plot mahal and inliers
@@ -302,7 +310,7 @@ class LoopClosure:
                      self.compute_ext_cov_li_to_l0_s_from_dijk(f"after_optimize_and_update_{self.lc_msg}")
 
         new_dws = utils.get_dws_from_cam_to_world_s(ext_li_to_l0_s)
-        new_sd = (new_dws, f'lc_{self.num_of_lc}', utils.get_color(self.num_of_lc))
+        new_sd = (new_dws, f'after LC {self.num_of_lc}', utils.get_color(self.num_of_lc))
         self.sd_list.append(new_sd)
 
         rots_total_error_abs, trans_total_error_abs = results.output_results(self.out_path, ext_li_to_l0_s, self.keyframes_idx, f"stage_5_{self.num_of_lc}",
@@ -323,7 +331,8 @@ class LoopClosure:
                 f.writelines('\n'.join(self.stats))
         if self.errors_before and self.errors_after:
                 err_dict = {'before':self.errors_before, 'after':self.errors_after}
-                my_plot.plotly_scatters(err_dict,title="stage5_pose_graph_errors", plot_dir=self.stage5_dir, yaxis="error", xaxis="LC num", save=True, plot=False)
+                x = list(range(1,len(self.errors_before)+1))
+                my_plot.plotly_scatters(err_dict,x=x, title="stage5_pose_graph_errors", plot_dir=self.stage5_dir, yaxis="error", xaxis="LC num", save=True, plot=False)
 
 if __name__=="__main__":
     stg3_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage3_40.8_29.9/stage3_ext_lj_to_li_s_cond_covs_2760.pkl'

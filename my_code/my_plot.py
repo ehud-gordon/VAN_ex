@@ -104,22 +104,6 @@ def plt_bundle_errors(errors_before, errors_after, idx, title="", plot_dir="plt"
     if plot:
         plt.show()
 
-def plt_kp_inlier_matches(kp_l1_inlier_matches, plot_dir="plt", plot=False):
-    endframe = len(kp_l1_inlier_matches)
-    idx = np.arange(endframe)+1
-    plt.figure()
-    plt.plot(idx, [t[0] for t in kp_l1_inlier_matches], label="keypoints_left1")
-    plt.plot(idx, [t[1] for t in kp_l1_inlier_matches], label="inliers")
-    plt.plot(idx, [t[2] for t in kp_l1_inlier_matches], label="matches")
-    plt.xlabel('frame'); plt.ylabel('count')
-    plt.title('count of inliers / matches / (keypoints in left1)')
-    plt.legend()
-    if plot_dir:
-        path = os.path.join(plot_dir, f'kp_l1_inlier_matches_{endframe}' + '.png')
-        plt.savefig(path, bbox_inches='tight', pad_inches=0)
-    if plot:
-        plt.show()
-
 class Draw_KP_PC_INLIERS:
     def __init__(self, img_l, kp_l, kp_r, pc, inliers_bool, i=0):
         assert kp_l.shape[1] == kp_r.shape[1] == pc.shape[1] == len(inliers_bool)
@@ -226,7 +210,7 @@ class Draw_KP_PC_INLIERS:
 
         plt.show()
 ############ PLOTLY ############
-def plotly_save_fig(fig, title, plot_dir, save, plot):
+def plotly_save_fig(fig, title="", plot_dir="", save=True, plot=True):
     fig.update_layout(title_text=title, title_x=0.5, font=dict(size=14))
     if save:
         path = os.path.join(plot_dir, title + '.html')
@@ -239,8 +223,7 @@ def plotly_save_fig(fig, title, plot_dir, save, plot):
         fig.write_image(png_path)
         if plot: webbrowser.open(utils.path_to_windows(path), new=2)
     if not save and plot:
-        path = os.path.join("tmp.html")
-        path = utils.get_avail_path(path)
+        path = utils.get_avail_path("tmp.html")
         fig.write_html(path, auto_open=False)
         webbrowser.open(utils.path_to_windows(path), new=2)
 
@@ -266,36 +249,41 @@ def plotly_2D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
     num_traces = len(dws_names_colors)
     frames_idx = np.array(frames_idx) if frames_idx else np.arange(0,num_frames)  # [0-10]
 
-    fig = go.Figure()
-
-    # create fixed scatters
-    for dws, name, color in dws_names_colors:
-        trace = go.Scatter(x=dws[0], y=dws[2], mode='lines+markers', marker=dict(size=3.5, color=color),
-                          name=name, line=dict(color=color, width=1),
-                          hovertemplate="x:%{x:.1f}, z:%{y:.1f}, f=%{text}", text=frames_idx)
-        fig.add_trace(trace)
-
     if num_frames > 1000:
         inds = np.arange(0, num_frames, 10)
         num_frames = inds.size
         dws_names_colors = [(dws[:,inds], label, color) for dws,label,color in dws_names_colors]
         frames_idx = frames_idx[inds]
 
-    # create marker scatters
-    for i in range(num_frames):
-        scat = go.Scatter(x=[dws[0,i] for dws,n,c in dws_names_colors], 
-                          y=[dws[2,i] for dws,n,c in dws_names_colors], 
-                          mode="markers", marker=dict(color="blue"), name=f'frame={str(frames_idx[i])}', visible=(i==0),
-                          hovertemplate="(%{x:.1f}, %{y:.1f})" +
-                                         f"<br>frame={str(frames_idx[i])}")
-        fig.add_trace(scat)
+    fig = go.Figure()
+    dws_list = [t[0] for t in dws_names_colors]
+    prev_x_list = [dws[0] for dws in dws_list]; prev_y_list = [dws[2] for dws in dws_list]
+
+    # create fixed scatters
+    pose_traces, marker_traces = [], []
+    for dws, name, color in dws_names_colors:
+        pose_trace = go.Scatter(x=dws[0], y=dws[2], mode='lines+markers', marker=dict(size=3.5, color=color),
+                          name=name, line=dict(color=color, width=1),
+                          hovertemplate="x:%{x:.1f}, z:%{y:.1f}, frame=%{text:.0f}", text=frames_idx,
+                          legendgroup=f"g{name}")
+                          
+        marker_trace = go.Scatter(x=[dws[0,0]],  y=[dws[2,0]], 
+                            mode="markers", legendgroup=f'g{name}', showlegend=False,
+                            marker=dict(color="blue"),name=name,
+                            hovertemplate="(%{x:.1f},%{y:.1f})" + "<br>frame=%{text:.0f}",
+                                          text=[frames_idx[0]])
+        pose_traces.append(pose_trace); marker_traces.append(marker_trace)
+    fig.add_traces(pose_traces); fig.add_traces(marker_traces)
+    
+
     
     # Create and add slider
     steps = []
     for i in range(num_frames):
-        vises = [False] * len(fig.data)
-        vises[:num_traces] = [True] * num_traces; vises[i + num_traces] = True
-        step = dict(method="update", args=[{"visible": vises}], label=f"{frames_idx[i]}")
+        step = dict(method="update",  args=[
+                {"x":prev_x_list + [[x_dws[i]] for x_dws in prev_x_list],
+                    "y": prev_y_list + [[y_dws[i]] for y_dws in prev_y_list],
+                "text": [frames_idx]*num_traces +[[frames_idx[i]] for _ in range(num_traces)]} ], label=f"{frames_idx[i]}")
         steps.append(step)
 
     sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
@@ -304,6 +292,8 @@ def plotly_2D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
     
     fig.update_layout(xaxis=dict(zeroline=False), xaxis_title="X", yaxis=dict(zeroline=False), yaxis_title="Z")
     fig.update_yaxes(scaleanchor = "x",scaleratio = 1)
+    fig.update_layout(title_text=title, title_x=0.5, font=dict(size=14))
+
 
     plotly_save_fig(fig, f'2D_cams_{title}', plot_dir, save, plot)
 
@@ -320,44 +310,45 @@ def plotly_3D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
         dws_names_colors = [(dws[:,inds], label, color) for dws,label,color in dws_names_colors]
         frames_idx = frames_idx[inds]
     
-    # create fixed scatter
+    dws_list = [t[0] for t in dws_names_colors]
+    prev_x_list = [dws[0] for dws in dws_list]; prev_y_list = [dws[2] for dws in dws_list]; prev_z_list = [dws[1] for dws in dws_list]
+    
+    # create scatters
+    pose_traces, marker_traces = [], []
     for dw, name, color in dws_names_colors:
-        trace = go.Scatter3d(x=dw[0], y=dw[2], z=dw[1], name=name, mode='markers+lines', line=dict(color=color),
+        pose_trace = go.Scatter3d(x=dw[0], y=dw[2], z=dw[1], name=name, mode='markers+lines', line=dict(color=color),
                                 marker=dict(size=3.5, color=color, opacity=0.5),
-                                hovertemplate="(%{x:.1f}, %{z:.1f}, %{y:.1f}) f=%{text}",
-                                text=frames_idx)
-        fig.add_trace(trace)
+                                hovertemplate="(%{x:.1f}, %{z:.1f}, %{y:.1f}) frame=%{text:.0f}",
+                                text=frames_idx, legendgroup=f"g{name}")
+        marker_trace = go.Scatter3d(x=[dw[0,0]],  y=[dw[2,0]],  z=[dw[1,0]], 
+                            mode="markers", legendgroup=f'g{name}', showlegend=False,
+                            marker=dict(color="blue"),name=name,
+                            hovertemplate="(%{x:.1f},%{z:.1f},%{y:.1f})" + "<br>frame=%{text:.0f}",
+                                          text=[frames_idx[0]])
+        pose_traces.append(pose_trace); marker_traces.append(marker_trace)
+    fig.add_traces(pose_traces); fig.add_traces(marker_traces)
 
     camera = dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0.2, y=-2, z=0.5) );fig.update_layout(scene_camera=camera)
     
-    # create marker scatters
-    for i in range(num_frames):
-        scat = go.Scatter3d(x=[dws[0,i] for dws,n,c in dws_names_colors], 
-                            y=[dws[2,i] for dws,n,c in dws_names_colors], 
-                            z=[dws[1,i] for dws,n,c in dws_names_colors], 
-                            mode="markers",
-                            marker=dict(color="blue"), name=f'frame={str(frames_idx[i])}', visible=(i==0),
-                            hovertemplate="(%{x:.1f},%{z:.1f},%{y:.1f})" +
-                                          f"<br>frame={str(frames_idx[i])}")
-        fig.add_trace(scat)
-
     # Create and add a slider
     steps = []
     for i in range(num_frames):
-        vises = [False] * len(fig.data)
-        vises[:num_traces] = [True] * num_traces; vises[i + num_traces] = True
-        step = dict(method="update", args=[{"visible": vises}], label=f"{frames_idx[i]}")
+        step = dict(method="update",  args=[
+                        {"x":prev_x_list + [[x_dws[i]] for x_dws in prev_x_list],
+                        "y": prev_y_list + [[y_dws[i]] for y_dws in prev_y_list],
+                        "z": prev_z_list + [[z_dws[i]] for z_dws in prev_z_list],
+                        "text": [frames_idx]*num_traces +[[frames_idx[i]] for _ in range(num_traces)]} ], label=f"{frames_idx[i]}")
         steps.append(step)
     sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
     fig.update_layout(sliders=sliders)
     
-    fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), width=850, height=850)
+    # fig.update_layout(margin=dict(l=0, r=0, t=40))
     fig.update_layout(showlegend=True)
-    fig.update_scenes(zaxis_autorange="reversed")
-    title1 = f"left camera location {title}"
-    fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
-    fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y'))
+    fig.update_scenes(zaxis_autorange="reversed", xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='cube')
+    fig.update_layout(title_text=title, title_x=0.5, font=dict(size=14))
     plotly_save_fig(fig, f'3D_cams_{title}', plot_dir, save, plot)
+    fig.update_scenes(aspectmode='data')
+    plotly_save_fig(fig, f'3D_cams_axes_equal_{title}', plot_dir, save, plot)
 
 def plotly_scatter(y, x=None, mode='lines+markers', title="", plot_dir="", xaxis="Frames", yaxis="Y", yrange=None, save=True, plot=False):
     scatter = go.Scatter(x=x, y=y, mode=mode)
@@ -386,7 +377,6 @@ def get_k_small(arr,k, min=True):
     return orig_sort_inds, vals_sort
 
 def plotly_k_scatter(llsd, frames_idx, title="", plot_dir="",plot=False, save=True, k=5, yaxis="Y", min=True, kitti=False):
-    endframe = llsd[-1][0]['cur_frame']
     fig = go.Figure()
     vals_frames_idx = []
     vals_arr, inds_arr = [], []
@@ -426,16 +416,15 @@ def plotly_k_scatter(llsd, frames_idx, title="", plot_dir="",plot=False, save=Tr
     fig.update_layout(xaxis_title="frames", yaxis_title=yaxis)
     fig.update_yaxes(range=[0,1])
     fig.update_layout(hovermode="x unified")
-    plotly_save_fig(fig, f'{title}_{endframe}', plot_dir, save, plot)
+    plotly_save_fig(fig, f'{title}', plot_dir, save, plot)
 
 def plot_trans_rot_norms(rot_norms, trans_norms, title="", plot_dir="", frames_idx=None, save=True, plot=False):
     num_frames = len(rot_norms) # 11
     frames_idx = frames_idx if frames_idx else np.arange(0,num_frames)  # [0-10]
-    endframe = frames_idx[-1]
     rot_scatter = go.Scatter(x=frames_idx, y=rot_norms, mode='lines', name="rot")
     trans_scatter = go.Scatter(x=frames_idx, y=trans_norms, mode='lines', name="trans")
     fig = go.Figure([rot_scatter, trans_scatter])
-    name = f'rot_trans{und_title(title)}_{endframe}'
+    name = f'rot_trans{und_title(title)}'
     fig.update_layout(xaxis_title="frames", yaxis_title="deg or meters")
     fig.update_layout(hovermode="x")
 
@@ -447,7 +436,6 @@ def frames_slider_plot(llsd, title="", plot_dir="", xaxis="Frames", yaxis="", sa
                   [l1,..., ln] where each li is a list of [d1,..] where dj = {'x':[], 'y':[], 'name':str, 'mode':mode, 'cur_frame':str() }
     """
     if not llsd: return
-    endframe = llsd[-1][0]['cur_frame']
     num_frames = len(llsd)
     fig = go.Figure()
     l_of_lens = [len(l) for l in llsd]
@@ -479,7 +467,70 @@ def frames_slider_plot(llsd, title="", plot_dir="", xaxis="Frames", yaxis="", sa
     fig.update_layout(xaxis_title=xaxis, yaxis_title=yaxis)
     if yrange: fig.update_yaxes(range=yrange)
 
-    plotly_save_fig(fig, f'0_{endframe}{und_title(title)}{endframe}', plot_dir, save, plot)
+    plotly_save_fig(fig, title, plot_dir, save, plot)
+
+def plotly_pnp_inliers(img_l, img_r, kp_l, kp_r,pc, kp_l_unmatched, kp_r_unmatched, inliers_bool, title="", plot_dir="", plot=False, save=True):
+    fig = make_subplots(rows=2, cols=1,
+                        shared_xaxes=True,
+                        specs=[
+                            [{"type":"xy"}],
+                            [{"type":"xy"}],
+                        ],
+                        horizontal_spacing = 0.01,
+                        vertical_spacing=0.01)
+    # IMAGES TRACES
+    img_l_trace  = go.Heatmap(z=img_l, colorscale='gray',name="img_l")
+    img_r_trace  = go.Heatmap(z=img_r, colorscale='gray',name="img_r")
+
+    fig.add_traces([img_l_trace, img_r_trace], rows=[1, 2], cols=[1, 1])
+
+    fig.update_yaxes(autorange='reversed', scaleanchor='x', visible=False, constrain='domain', showgrid=False, zeroline=False, row=1, col=1)
+    fig.update_xaxes(constrain='domain',showgrid=False, visible=False, zeroline=False, row=1, col=1)
+
+    fig.update_yaxes(autorange='reversed', scaleanchor='x', constrain='domain', visible=False, showgrid=False, zeroline=False, row=2, col=1)
+    fig.update_xaxes(constrain='domain',showgrid=False, zeroline=False, visible=False, row=2, col=1)
+
+    fig.data[0].showscale = False; fig.data[0].coloraxis = None
+    fig.data[1].showscale = False; fig.data[1].coloraxis = None
+
+
+    # KEYPOINTS TRACES
+    kp_l_inliers = kp_l[:, inliers_bool]; kp_l_inliers_text = [f'({x:.1f}, {y:.1f})' for x, y in kp_l_inliers.T]
+
+    kp_l_outliers = kp_l[:, ~inliers_bool]; kp_l_outliers_text = [f'({x:.1f}, {y:.1f})' for x, y in kp_l_outliers.T]
+
+    kp_r_inliers = kp_r[:, inliers_bool]; kp_r_inliers_text = [f'({x:.1f}, {y:.1f})' for x, y in kp_r_inliers.T]
+
+    kp_r_outliers = kp_r[:, ~inliers_bool]; kp_r_outliers_text = [f'({x:.1f}, {y:.1f})' for x, y in kp_r_outliers.T]
+
+    inliers_pc = pc[:, inliers_bool]; inliers_pc_txt = [f'({x:.1f}, {y:.1f}, {z:.1f})' for x, y, z in inliers_pc.T]
+
+    outliers_pc = pc[:, ~inliers_bool]; outliers_pc_txt = [f'({x:.1f}, {y:.1f}, {z:.1f})' for x, y, z in outliers_pc.T]
+
+    kp_l_inliers_tt = [f'pc={x}<br>kp_r={y}' for x,y in zip(inliers_pc_txt, kp_r_inliers_text)]
+    kp_l_inliers_scat = go.Scatter(x=kp_l_inliers[0], y=kp_l_inliers[1], mode="markers", name="kp_l_inliers",
+                             marker=dict(color="green", size=9), hovertemplate="(%{x:.1f}, %{y:.1f}), %{text}", text=kp_l_inliers_tt)
+    kp_l_outliers_tt = [f'pc={x}<br>kp_r={y}' for x, y in zip(outliers_pc_txt, kp_r_outliers_text)]
+    kp_l_outliers_scat = go.Scatter(x=kp_l_outliers[0], y=kp_l_outliers[1], mode="markers", name="kp_l_outliers",
+                              marker=dict(color="red", size=9), hovertemplate="(%{x:.1f}, %{y:.1f}), %{text}",text=kp_l_outliers_tt)
+    fig.add_traces([kp_l_inliers_scat, kp_l_outliers_scat], rows=[1, 1], cols=[1, 1])
+
+    kp_r_inliers_tt = [f'pc={x}<br>kp_l={y}' for x, y in zip(inliers_pc_txt, kp_l_inliers_text)]
+    kp_r_inliers_scat = go.Scatter(x=kp_r_inliers[0], y=kp_r_inliers[1], mode="markers", name="kp_r_inliers",
+                                   marker=dict(color="green", size=9), hovertemplate="(%{x:.1f}, %{y:.1f}), %{text}", text=kp_r_inliers_tt)
+    kp_r_outliers_tt = [f'pc={x}<br>kp_l={y}' for x, y in zip(outliers_pc_txt, kp_l_outliers_text)]
+    kp_r_outliers_scat = go.Scatter(x=kp_r_outliers[0], y=kp_r_outliers[1], mode="markers", name="kp_r_outliers",
+                                    marker=dict(color="red", size=9), hovertemplate="(%{x:.1f}, %{y:.1f}), %{text}", text=kp_r_outliers_tt)
+    fig.add_traces([kp_r_inliers_scat, kp_r_outliers_scat], rows=[2, 2], cols=[1, 1])
+
+    # unmatched scatters
+    l_unmatched_scat = go.Scatter(x=kp_l_unmatched[0], y=kp_l_unmatched[1], mode="markers", name="kp_l_unmatched", opacity=0.6, marker=dict(color="yellow", size=5))
+    r_unmatched_scat = go.Scatter(x=kp_r_unmatched[0], y=kp_r_unmatched[1], mode="markers", name="kp_r_unmatched",opacity=0.6, marker=dict(color="yellow", size=5))
+    # fig.add_traces([l_unmatched_scat, r_unmatched_scat], rows=[1,2], cols=[1,1])
+
+    # GENERAL
+    fig.update_layout(coloraxis_showscale=False, showlegend=False)
+    plotly_save_fig(fig, title, plot_dir, save, plot)
 
 def plotly_kp_pc_inliers(img_l, img_r, kp_l, kp_r, pc, inliers_bool, title="", plot_dir="", plot=False, save=True):
     fig = make_subplots(rows=2, cols=2,
@@ -620,38 +671,37 @@ def plotly_inliers_outliers(img, kp, inliers_bool,  pc, title="", plot_dir="", p
 
     plotly_save_fig(fig, f'inliers_outliers{und_title(title)}', plot_dir, save, plot)
     
-def plotly_cov_dets(cov_lj_cond_li_dict, frames_idx, title="", plot_dir="", plot=False, save=True):
+def plotly_cov_dets(cov_cj_cond_ci_dict, frames_idx, title="", plot_dir="", plot=False, save=True):
     # conditional
     num_frames = len(frames_idx) # 277
-    endframe=frames_idx[-1]
-    cov_lj_cond_li_s, cov_li_cond_lj_s =[], []
-    lj_cond_li_dets, li_cond_lj_dets =[], []
+    cov_cj_cond_ci_s, cov_ci_cond_cj_s =[], []
+    cj_cond_ci_dets, ci_cond_cj_dets =[], []
     for j in range(1,num_frames): # [1,..,276]
-        cov_lj_cond_li = cov_lj_cond_li_dict[j][j-1]; cov_lj_cond_li_s.append(cov_lj_cond_li)
-        cov_li_cond_lj = cov_lj_cond_li_dict[j-1][j]; cov_li_cond_lj_s.append(cov_li_cond_lj)
-        lj_cond_li_dets.append( np.linalg.det(cov_lj_cond_li) )
-        li_cond_lj_dets.append( np.linalg.det(cov_li_cond_lj) )
+        cov_cj_cond_ci = cov_cj_cond_ci_dict[j][j-1]; cov_cj_cond_ci_s.append(cov_cj_cond_ci)
+        cov_ci_cond_cj = cov_cj_cond_ci_dict[j-1][j]; cov_ci_cond_cj_s.append(cov_ci_cond_cj)
+        cj_cond_ci_dets.append( np.linalg.det(cov_cj_cond_ci) )
+        ci_cond_cj_dets.append( np.linalg.det(cov_ci_cond_cj) )
     title = rund(title)
-    dct1 = {'det_lj_cond_li':lj_cond_li_dets, 'det_li_cond_li':li_cond_lj_dets}
-    plotly_scatters(dct1, x=frames_idx, title=f"det_cond_{title}{endframe}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
+    dct1 = {'det_lj_cond_li':cj_cond_ci_dets, 'det_li_cond_li':ci_cond_cj_dets}
+    plotly_scatters(dct1, x=frames_idx, title=f"det_cond_{title}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
     
     # cumsum
-    cumsum_lj_on_li = utils.cumsum_mats(cov_lj_cond_li_s); 
-    cumsum_lj_on_li_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_lj_on_li]
-    cumsum_li_on_lj = utils.cumsum_mats(cov_li_cond_lj_s)
-    cumsum_li_on_lj_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_li_on_lj]
-    dct1 = {'cumsum_lj_cond_li':cumsum_lj_on_li_dets, 'cumsum_li_cond_lj':cumsum_li_on_lj_dets}
-    plotly_scatters(dct1, x=frames_idx, title=f"det_cumsum_cond_{title}{endframe}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
+    cumsum_cj_on_ci = utils.cumsum_mats(cov_cj_cond_ci_s); 
+    cumsum_cj_on_ci_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_cj_on_ci]
+    cumsum_ci_on_cj = utils.cumsum_mats(cov_ci_cond_cj_s)
+    cumsum_ci_on_cj_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_ci_on_cj]
+    dct1 = {'cumsum_lj_cond_li':cumsum_cj_on_ci_dets, 'cumsum_li_cond_lj':cumsum_ci_on_cj_dets}
+    plotly_scatters(dct1, x=frames_idx, title=f"det_cumsum_cond_{title}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
 
 def pose_graph_llsd(keyframes_idx, llsd_inliers, llsd_mahal, llsd_dets, title, plot_dir):
     if llsd_mahal:
-        plotly_k_scatter(llsd_mahal, keyframes_idx, title=f"{title}_mahals_k_scatter", plot_dir=plot_dir, min=True, yaxis="mahal_dist", plot=False, save=True)
-        frames_slider_plot(llsd_mahal, title=f"{title}_mahal_dist_slider", plot_dir=plot_dir, yaxis="mahal dist", yrange=[0,5], plot=False, save=True)
+        plotly_k_scatter(llsd_mahal, keyframes_idx, title=f"mahals_k_scatter_{title}", plot_dir=plot_dir, min=True, yaxis="Mahalanobis distance", plot=False, save=True)
+        frames_slider_plot(llsd_mahal, title=f"mahal_dist_slider_{title}", plot_dir=plot_dir, yaxis="Mahalanobis distance", yrange=[0,5], plot=False, save=True)
     if llsd_inliers: 
-        plotly_k_scatter(llsd_inliers, keyframes_idx, title=f"{title}_inliers_percents_k_scatter", plot_dir=plot_dir, min=False, yaxis=r"% inliers", plot=False, save=True, kitti=True)
-        frames_slider_plot(llsd_inliers, title=f"{title}_inliers_percents_slider", plot_dir=plot_dir, yaxis=r"% inliers", yrange=[0,1], plot=False, save=True)         
+        plotly_k_scatter(llsd_inliers, keyframes_idx, title=f"inliers_frac_k_scatter_{title}", plot_dir=plot_dir, min=False, yaxis="fraction of inliers", plot=False, save=True, kitti=True)
+        frames_slider_plot(llsd_inliers, title=f"inliers_frac_slider_{title}", plot_dir=plot_dir, yaxis="fraction of inliers", yrange=[0,1], plot=False, save=True)         
     if llsd_dets:
-        frames_slider_plot(llsd_dets, title=f"{title}_det_distance", plot_dir=plot_dir, yaxis=r"det_distance", plot=False, save=True)
+        frames_slider_plot(llsd_dets, title=f"det_distance_{title}", plot_dir=plot_dir, yaxis="determinant distance", plot=False, save=True)
 
 # if __name__=="__main__":
 #     my_dws = np.array([[0, -0.004751, -0.01733, -0.02374, -0.02972, -0.03907, -0.05193, -0.06274, -0.07457, -0.09065,

@@ -172,11 +172,11 @@ def do_single_bundle(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k): # bundelo
         return values, error_before, error_after, marginals
 
 if __name__=="__main__":
-    # ext_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-14-49_0_20/stage2_0.4_0.8/ext_li_to_lj_s_stage2_20.pkl'
-    # tracks_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-14-49_0_20/stage2_0.4_0.8/stage2_tracks_20.pkl'
+    ext_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-14-49_0_20/stage2_0.4_0.8/ext_li_to_lj_s_stage2_20.pkl'
+    tracks_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-14-49_0_20/stage2_0.4_0.8/stage2_tracks_20.pkl'
 
-    ext_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage2_54.9_112.8/ext_li_to_lj_s_stage2_2760.pkl'
-    tracks_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage2_54.9_112.8/stage2_tracks_2760.pkl'
+    # ext_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage2_54.9_112.8/ext_li_to_lj_s_stage2_2760.pkl'
+    # tracks_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage2_54.9_112.8/stage2_tracks_2760.pkl'
     
     tracks_pkl_path_os = utils.path_to_current_os(tracks_pkl_path)
     stage2_dir, _, _ = utils.dir_name_ext(tracks_pkl_path_os)
