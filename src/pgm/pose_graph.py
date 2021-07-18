@@ -4,32 +4,6 @@ import gtsam
 from gtsam import Pose3, utils as g_utils
 from gtsam.symbol_shorthand import X
 
-from collections import defaultdict
-
-
-def extract_ext_ci_to_c0_s_from_values(values, keyframes_idx):
-    ext_ci_to_c0_s = [values.atPose3(X(i_kf)).matrix() for i_kf in keyframes_idx]
-    return ext_ci_to_c0_s
-
-def extract_Pose3_list_from_values(values, keyframes_idx):
-    Pose3_list = [values.atPose3( X(i_kf) ) for i_kf in keyframes_idx]
-    return Pose3_list
-    
-def extract_ext_cond_from_values_marginals(values, marginals, keyframes_idx):
-    ext_ci_to_c0_s = []
-    for i_kf in keyframes_idx:
-        Pose3_ci_to_c0 = values.atPose3( X(i_kf))
-        ext_ci_to_c0_s.append(Pose3_ci_to_c0.matrix())
-
-    cov_cj_cond_ci_dict = defaultdict(dict)
-    for j in range(1, len(keyframes_idx)):
-        i_kf, j_kf = keyframes_idx[j-1], keyframes_idx[j]
-        cov_cj_cond_ci = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, i_kf, j_kf); 
-        cov_cj_cond_ci_dict[j][j-1] = cov_cj_cond_ci
-        cov_ci_cond_cj = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, j_kf, i_kf);
-        cov_cj_cond_ci_dict[j-1][j] = cov_ci_cond_cj
-    return ext_ci_to_c0_s, cov_cj_cond_ci_dict
-
 
 
 def build_pose_graph(keyframes_idx, ci_to_c0_s, from_cn_to_ci_dict, cov_cn_cond_ci_dict):
@@ -45,8 +19,8 @@ def build_pose_graph(keyframes_idx, ci_to_c0_s, from_cn_to_ci_dict, cov_cn_cond_
         initialEstimate.insert( X(i_kf), g_utils.to_Pose3(ci_to_c0))
     
     # add prior factor to graph
-    pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1*pi/180, 1*pi/180, 1*pi/180, 0.3, 0.3, 0.3])) # (1 deg, input must be radian), 0.3 
-    priorFactor = gtsam.PriorFactorPose3( X(startframe), Pose3() , pose_noise_model)
+    pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1 * pi / 180, 1 * pi / 180, 1 * pi / 180, 0.3, 0.3, 0.3])) # (1 deg, input must be radian), 0.3
+    priorFactor = gtsam.PriorFactorPose3(X(startframe), Pose3(), pose_noise_model)
     graph.add(priorFactor)
 
     # add between factors to graph
@@ -57,7 +31,7 @@ def build_pose_graph(keyframes_idx, ci_to_c0_s, from_cn_to_ci_dict, cov_cn_cond_
             i_kf = keyframes_idx[i]
             cov_cn_cond_ci = cov_cn_cond_ci_dict[n][i]
             noise_model = gtsam.noiseModel.Gaussian.Covariance(cov_cn_cond_ci)
-            factor = gtsam.BetweenFactorPose3( X(i_kf), X(n_kf) , g_utils.to_Pose3(cn_to_ci), noise_model)
+            factor = gtsam.BetweenFactorPose3(X(i_kf), X(n_kf), g_utils.to_Pose3(cn_to_ci), noise_model)
             graph.add(factor)
     return graph, initialEstimate
 

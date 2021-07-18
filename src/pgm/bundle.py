@@ -4,14 +4,14 @@ from numpy import pi
 import gtsam
 from gtsam.symbol_shorthand import X, P
 from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D, Point3
-
+import utils.sys_utils as sys_utils
 from collections import defaultdict
 import os
 import time
 
-import src.utils as utils
+import utils
 import kitti, results
-import src.gtsam.utils as g_utils
+import pgm.utils as g_utils
 
 class FactorGraphSLAM:
     def __init__(self, ext_li_to_lj_s, tracks_db, out_path):
@@ -40,10 +40,10 @@ class FactorGraphSLAM:
 
     def init_folders(self):
         self.stage3_dir = os.path.join(self.out_path, 'stage3')
-        utils.sys.clear_and_make_dir(self.stage3_dir)
+        sys_utils.clear_and_make_dir(self.stage3_dir)
         if self.single_bundle_plots:
             self.single_bundle_plot_dir = os.path.join(self.stage3_dir, 'single_bundle')
-            utils.sys.clear_and_make_dir(self.single_bundle_plot_dir)
+            sys_utils.clear_and_make_dir(self.single_bundle_plot_dir)
     
     def main(self):
         Pose3_lj_to_li_keyframes = []
@@ -53,17 +53,17 @@ class FactorGraphSLAM:
         num_keyframes = len(self.keyframes_idx) # 277
         for j in range(0,num_keyframes-1): # [0,..,275]
         # for i in range(0, len(self.frames_idx)-1, self.bundle_len-1): # [0, 10, ..., 2750]
-            # perform single bundelon
+            # perform single bundle
             i = self.keyframes_idx[j] # [0, 10, ..., 2750]
-            bundelon_frames_idx = self.frames_idx[i:(i+self.bundle_len)] #[20,...,30]
-            startframe = bundelon_frames_idx[0]; endframe = bundelon_frames_idx[-1]
-            bundelon_ext_li_to_lj_s = self.ext_li_to_lj_s[ (i+1):(i+self.bundle_len) ]  # [21-to_20, ,...,30_to_29]
-            bundelon_ext_li_to_lj_s.insert(0, self.ext_id) # # [id, 21-to_20, ,...,30_to_29]
-            bundelon_ext_li_to_l0_s = utils.geometry.concat_and_inv_ci_to_cj_s(bundelon_ext_li_to_lj_s) # [l20_to_l20, l21_to_l20,...,l30_to_l20]
-            values, error_before, error_after, marginals = do_single_bundle(bundelon_frames_idx, bundelon_ext_li_to_l0_s, self.tracks_db, self.gt_k)
-            # output bundelon results
-            cov_lend_cond_on_lstart = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, startframe, endframe)
-            cov_lstart_cond_on_lend = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, endframe, startframe)
+            bundle_frames_idx = self.frames_idx[i:(i+self.bundle_len)] #[20,...,30]
+            startframe = bundle_frames_idx[0]; endframe = bundle_frames_idx[-1]
+            bundle_ext_li_to_lj_s = self.ext_li_to_lj_s[ (i+1):(i+self.bundle_len) ]  # [21-to_20, ,...,30_to_29]
+            bundle_ext_li_to_lj_s.insert(0, self.ext_id) # # [id, 21-to_20, ,...,30_to_29]
+            bundle_ext_li_to_l0_s = utils.geometry.concat_and_inv_ci_to_cj_s(bundle_ext_li_to_lj_s) # [l20_to_l20, l21_to_l20,...,l30_to_l20]
+            values, error_before, error_after, marginals = do_single_bundle(bundle_frames_idx, bundle_ext_li_to_l0_s, self.tracks_db, self.gt_k)
+            # output bundle results
+            cov_lend_cond_on_lstart = g_utils.extract_conditional_covariance(marginals, startframe, endframe)
+            cov_lstart_cond_on_lend = g_utils.extract_conditional_covariance(marginals, endframe, startframe)
             cov_lj_cond_li_dict[j+1][j] = cov_lend_cond_on_lstart
             cov_lj_cond_li_dict[j][j+1] = cov_lstart_cond_on_lend
             msg = f'bundle frames [{startframe}-{endframe}]: error before: {error_before:.1f}, after: {error_after:.1f}'
@@ -89,7 +89,7 @@ class FactorGraphSLAM:
 
         # rename stage3 folder
         new_stage3_dir = self.stage3_dir + f'_{trans_total_error:.1f}_{rots_total_error:.1f}'
-        new_stage3_dir = utils.sys.get_avail_path(new_stage3_dir)
+        new_stage3_dir = sys_utils.get_avail_path(new_stage3_dir)
         os.rename(self.stage3_dir, new_stage3_dir)
         self.stage3_dir = new_stage3_dir
         
@@ -116,7 +116,7 @@ def build_bundle_graph(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k):
     endframe = frames_idx[-1]        
     graph = gtsam.NonlinearFactorGraph()
     initialEstimate = gtsam.Values()
-    pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1*pi/180, 1*pi/180, 1*pi/180, 0.3, 0.3, 0.3])) # (1 deg, input must be radian), 0.3 meter
+    pose_noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1 * pi / 180, 1 * pi / 180, 1 * pi / 180, 0.3, 0.3, 0.3])) # (1 deg, input must be radian), 0.3 meter
     meas_noise_model = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
 
     # add initial estimates for cameras
@@ -124,7 +124,7 @@ def build_bundle_graph(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k):
         initialEstimate.insert( X(i_frame), Pose3(ext_li_to_lstart) )
 
     # add Prior Factor for start pose
-    priorFactor = gtsam.PriorFactorPose3( X(startframe), Pose3(), pose_noise_model )
+    priorFactor = gtsam.PriorFactorPose3(X(startframe), Pose3(), pose_noise_model)
     graph.add(priorFactor)
     # graph.add( gtsam.NonlinearEqualityPose3(X(l0_idx), Pose3()) )
 
@@ -153,7 +153,7 @@ def build_bundle_graph(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k):
                 initialEstimate.insert( P(track.id), Point3(track_pc))
     return graph, initialEstimate
 
-def do_single_bundle(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k): # bundelon
+def do_single_bundle(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k):
         assert len(frames_idx) == len(ext_li_to_lstart_s)
         assert np.allclose( ext_li_to_lstart_s[0], np.diag([1,1,1,1]) )
         graph, initialEstimate = build_bundle_graph(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k)

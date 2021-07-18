@@ -41,11 +41,6 @@ def inv_extrinsics(ext_mat):
         inv = np.vstack((inv, np.array([0,0,0,1])))
     return inv
 
-
-def inv_extrinsics_mult(ext_mats):
-    return [inv_extrinsics(mat) for mat in ext_mats]
-
-
 def rotation_matrices_diff(R,Q):
     rvec, _ = cv2.Rodrigues(R.transpose() @ Q)
     radian_diff = np.linalg.norm(rvec)
@@ -162,7 +157,7 @@ def get_rot_trans_diffs_from_mats(exts_gt, *exts_B):
     :param exts_gt: a list of extrinsics matrices that we compare to (ground truth)
     """
     for exts in exts_B:
-        assert len(exts_B) == len (exts_B)
+        assert len(exts) == len (exts_B)
     rots_gt, trans_gt = get_rot_trans_s(exts_gt)
     rots_diffs_res, trans_diffs_res = [], []
     for exts in exts_B:
@@ -175,8 +170,12 @@ def get_rot_trans_diffs_from_mats(exts_gt, *exts_B):
 
 def get_rot_trans_diffs(rots_A, rots_B, trans_vecs_A, trans_vecs_B):
     """
-    :param rots: list of rotation matrices
-    :param trans_vecs: (3,n)
+
+    :param rots_A: list of n rotation matrices
+    :param rots_B: list of n rotation matrices
+    :param trans_vecs_A: (3,n) ndarray of translation vectos
+    :param trans_vecs_B: (3,n) ndarray of translation vectos
+    :return:
     """
     rot_diffs = [rotation_matrices_diff(r, q) for r, q in zip (rots_A, rots_B)]
     rot_diffs = np.array(rot_diffs)
@@ -237,7 +236,7 @@ def concat_ci_to_cj_s(ext_ci_to_cj_s):
 
 def concat_and_inv_ci_to_cj_s(ext_ci_to_cj_s):
     ext_c0_to_ci_s = concat_ci_to_cj_s(ext_ci_to_cj_s)
-    ext_ci_to_c0_s = inv_extrinsics_mult(ext_c0_to_ci_s)
+    ext_ci_to_c0_s = [inv_extrinsics(mat) for mat in ext_c0_to_ci_s]
     return ext_ci_to_c0_s
 
 
@@ -248,3 +247,49 @@ def concat_cj_to_ci_s(ext_cj_to_ci_s):
         ext_cj_to_c0 = ext_ci_to_c0_s[-1] @ ext_cj_to_ci
         ext_ci_to_c0_s.append(ext_cj_to_c0)
     return ext_ci_to_c0_s
+
+
+def get_extrinsics_inliers_stereo(pixels_left, pixels_right, pc, ext_world_to_cam, ext_l_to_r, k, threshold=2):
+    """ Computes the inliers of matches between pixels and point-cloud, w.r.t. an extrinsics matrix.
+    The inputs are:
+    (1) matching pixels in left and right images.
+    (2) their 3D locations (in world CS)
+    (3) Extrinsics matrices: ext world_to_cam and ext_left_to_right.
+    We project the point-cloud to pixels_left and pixels_right, using the previous matrices, to get proj_pixels_left and proj_pixels_right.
+    We then filter, so we keep only those points that're consistent with the ext_mats. That is, their world-point is projected close
+    to both their pixels_left and pixels_right locations.
+
+    :param pixels_left: (2,n) pixels in left image, matched to pixels_right and pc
+    :param pixels_right: (2,n) pixels in right image, matched to pixels_left and pc
+    :param pc: (3,n) point-cloud, matched to pixels_left and pixels_right
+    :param ext_world_to_cam: (4,4) extrinsics matrix from WORLD CS to left-camera CS
+    :param ext_l_to_r: (4,4) extrinsic matrix from left-camera CS to right-camera CS
+    :param k:  (4,4) intrinsics camera matrix
+    :param threshold: L2 distance used as reprojection threshold to determine inliers.
+    :return:
+        inliers - boolean ndarray (n,), with True in indices of points that were projected close with the extrinsics
+    """
+    assert pixels_left.shape[1] == pixels_right.shape[1] == pc.shape[1]
+    # fix shape if needed
+    if pc.shape[0] == 3:
+        pc = np.vstack((pc, np.ones(pc.shape[1])))  # (4,n)
+
+    # compute projection matrices
+    projection_world_to_left = k @ ext_world_to_cam  # (3,4) # from world to pixels_left
+    ext_world_to_right = ext_l_to_r @ ext_world_to_cam  # (4,4) # from world to camera_right
+    projection_world_to_right = k @ ext_world_to_right  # (3,4) # from world to pixels_right
+
+    # project point-cloud to left image
+    projected_left = projection_world_to_left @ pc  # (3,n) inhomogeneous pixels
+    projected_left = projected_left[0:2] / projected_left[-1]  # (2,n)
+
+    # project point-cloud to right image
+    projected_right = projection_world_to_right @ pc  # (3,n) inhomogeneous pixels
+    projected_right = projected_right[0:2] / projected_right[-1]  # (2,n)
+
+    projection_errors_left = np.linalg.norm((pixels_left - projected_left), axis=0) # L2 norm
+    projection_errors_right = np.linalg.norm((pixels_right - projected_right), axis=0)  # L2 norm
+    inliers_left = projection_errors_left <= threshold
+    inliers_right = projection_errors_right <= threshold
+    inliers = inliers_left * inliers_right # (n,)
+    return inliers

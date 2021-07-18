@@ -1,123 +1,98 @@
+""" Database for storing stereo tracks """ 
+
 import numpy as np
 
-import os
-import pickle
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Tuple
 
-import kitti
-import utils.geometry
-from calib3d import triangulate
-import utils
-
-TRACKS_PATH = r'C:\Users\godin\Documents\VAN_ex\tracks'
-BITS_TRACKS_PER_IMG = 11
+BITS_TRACKS_PER_IMG = 11 # hack to create great track ids
 
 
-class Track:
-    def __init__(self, id, pc,left_meas, right_meas, length, cam_id, match_id, prev=None, next=None):
-        self.id = id
-        self.orig_cam_id, self.orig_m_id = track_id_to_cam_match_idx(track_id=id)
-        self.cam_id = cam_id
-        self.match_id = match_id
-        self.pc = pc
-        self.left_x = left_meas[0]; self.left_y = left_meas[1]
-        self.right_x = right_meas[0]; self.right_y = right_meas[1]
-        self.length = length
-        self.prev = prev
-        self.next = next
+@dataclass
+class StereoTrack:
+    """ Track in stereo frames"""
+    id: int # track id
+    cam_id: int
+    match_id: int
+    point3: np.ndarray # the 3D location
+    # the pixels location
+    point2_left : np.ndarray
+    point2_right: np.ndarray
+    track_length : int
+    prev_track: Tuple[int, int] = None # (prev_track_id, prev_track_m_id). Could be None
+    next_track: Tuple[int, int] = None # (next_track_id, prev_track_m_id). Could be None
 
-    def __repr__(self):
-        message = (
-            f'id={self.id}, pc={self.pc}, left=({self.left_x:.1f}, {self.left_y:.1f})'
-            f', right=({self.right_x:.2f}, {self.right_y:.2f}), cam_id={self.cam_id}, length={self.length}'
-            f', orig=({self.orig_cam_id},{self.orig_m_id}), prev={self.prev}, next={self.next}'
-        )
-        return message
+    def __post_init__(self):
+        self.orig_cam_id, self.orig_match_id = track_id_to_cam_match_idx(self.id)
+        self.point2_left_x = self.point2_left[0]
+        self.point2_left_y = self.point2_left[1]
+        self.point2_right_x = self.point2_right[0]
+        self.point2_right_y = self.point2_right[1]
 
+class StereoTracksDB:
+    """ Database for storing tracks between frames of stereo images"""
+    def __init__(self):
+        self.db = defaultdict(dict) # database
 
-class Tracks_DB:
-    def __init__(self, td=None, frames_idx=None):
-        self.td = dict() if td is None else td
-        self.frames_idx = [] if frames_idx is None else frames_idx
+    def add_frame(self, stereo_features_i, stereo_features_j, matches_i_j):
+        """ add a set of tracks to the database. pixels are matched between frames i and j.
 
-    def add_frame(self, matches_li_lj, i,j, kp_li, kp_ri, kp_lj, kp_rj, pc_lr_i_in_li, pc_lr_j_in_lj=None):
-        if not self.frames_idx: self.frames_idx.append(i)
-        self.frames_idx.append(j)
-        assert kp_li.shape[1] == kp_ri.shape[1] == pc_lr_i_in_li.shape[1]
-        assert kp_lj.shape[1] == kp_rj.shape[1]
-        if pc_lr_j_in_lj is not None:
-            assert kp_lj.shape[1] == kp_rj.shape[1] == pc_lr_j_in_lj.shape[1]        
-        self.td[j] = dict()
-        if i not in self.td:
-            self.td[i] = dict()
-        trains = [m.trainIdx for m in matches_li_lj] #
-        # Below indicates a bug where two different kps in li (e.g. queries[63,64]=115,116) are matched to same kp in lj (trains[63:65]=91,91)
-        if np.sum(np.bincount(trains) >= 2) > 0:
-            print(f"add_frame({j}) DOUBLE ERROR")
-        for match in matches_li_lj:
+        :param stereo_features_i: StereoFeatures object (keypoints + point-cloud) of frame i
+        :param stereo_features_j: StereoFeatures object (keypoints + point-cloud) of frame j
+        :param matches_i_j: list of matches [DMatch1, ... , DMatchn] between features of frame i and j
+        """
+        i = stereo_features_i.idx
+        keypoints_left_i = stereo_features_i.keypoints_left
+        keypoints_right_i = stereo_features_i.keypoints_right
+        pc_i = stereo_features_i.pc # point-cloud
+
+        j = stereo_features_j.idx
+        keypoints_left_j = stereo_features_j.keypoints_left
+        keypoints_right_j = stereo_features_j.keypoints_right
+        pc_j = stereo_features_j.pc  # point-cloud
+
+        assert keypoints_left_i.shape[1] == keypoints_right_i.shape[1] == pc_i.shape[1]
+        assert keypoints_left_j.shape[1] == keypoints_right_j.shape[1] == pc_j.shape[1]
+
+        # add tracks to database
+        for match in matches_i_j:
             match_i_id = match.queryIdx
             match_j_id = match.trainIdx
-            pc_i_meas_in_li = pc_lr_i_in_li[:, match_i_id] # the pc estimate from frame i
-            if pc_lr_j_in_lj is not None:
-                pc_j_meas_in_lj = pc_lr_j_in_lj[:, match_j_id] # the pc estimate from frame j, should be real close to pc_li
-            else:
-                pc_j_meas_in_lj = 0
-            lj_meas = kp_lj[:, match_j_id]
-            rj_meas = kp_rj[:, match_j_id]
-            # add all tracks that extend existing previous tracks
-            if match_i_id in self.td[i]: # re-use existing track
-                prev_track = self.td[i][match_i_id]
-                prev_track.next = (j, match_j_id)
+            point3_i = pc_i[:, match_i_id] # the point-cloud location from frame i
+            point3_j = pc_j[:, match_j_id] # the point-cloud estimate from frame j
+            point2_left_j = keypoints_left_j[:, match_j_id]
+            point2_right_j = keypoints_right_j[:, match_j_id]
+            # add all tracks that extend existing tracks
+            if match_i_id in self.db[i]: # re-use existing track
+                prev_track = self.db[i][match_i_id]
+                prev_track.next_track = (j, match_j_id)
                 track_id = prev_track.id
-                track_length = prev_track.length + 1
-                new_track_j = Track(id=track_id, pc=pc_j_meas_in_lj, left_meas=lj_meas, right_meas=rj_meas, length=track_length,
-                                     cam_id=j, match_id=match_j_id, prev=(i, match_i_id))
-                if match_j_id in self.td[j]:
-                    weird = self.td[j][match_j_id]
-                    print(f"error1, {new_track_j}")
-                self.td[j][match_j_id]= new_track_j
-            else: # add new tracks
+                track_length = prev_track.track_length + 1
+                new_track_j = StereoTrack(id=track_id, point3=point3_j, point2_left=point2_left_j, point2_right=point2_right_j,
+                                          track_length=track_length, cam_id=j, match_id=match_j_id, prev_track=(i, match_i_id))
+                self.db[j][match_j_id]= new_track_j
+            else: # Create new tracks
+                # create track for frame i
                 track_id = cam_match_idx_to_track_id(i, match_i_id)
-                li_meas = kp_li[:,match_i_id]
-                ri_meas = kp_ri[:, match_i_id]
-                new_track_i = Track(id=track_id, pc=pc_i_meas_in_li, left_meas=li_meas, right_meas=ri_meas, length=1, cam_id=i,
-                                     match_id=match_i_id, next=(j, match_j_id))
-                self.td[i][match_i_id] = new_track_i
+                point2_left_i = keypoints_left_i[:, match_i_id]
+                point2_right_i = keypoints_right_i[:, match_i_id]
+                new_track_i = StereoTrack(id=track_id, point3=point3_i, point2_left=point2_left_i, point2_right=point2_right_i, 
+                                          track_length=1, cam_id=i, match_id=match_i_id, next_track=(j, match_j_id))
+                self.db[i][match_i_id] = new_track_i
+                # create track for frame j
+                new_track_j = StereoTrack(id=track_id, point3=point3_j, point2_left=point2_left_j, point2_right=point2_right_j,
+                                          track_length=2, cam_id=j, match_id=match_j_id, prev_track=(i, match_i_id))
+                self.db[j][match_j_id] = new_track_j
 
-                new_track_j = Track(id=track_id, pc=pc_j_meas_in_lj, left_meas=lj_meas, right_meas=rj_meas, length=2, cam_id=j,
-                                     match_id=match_j_id, prev=(i, match_i_id))
-                if match_j_id in self.td[j]:
-                    weird2 = self.td[j][match_j_id]
-                    print("error2", new_track_j)
-                self.td[j][match_j_id] = new_track_j
-
-    def get_track_ids(self, cam_id):
+    def get_tracks(self, frame_idx):
+        """ return all tracks from frame i"""
         try:
-            return {track.id for track in self.td[cam_id].values()} # set of ints
+            return list(self.db[frame_idx].values())  # list of tuples
         except KeyError:
             return None
 
-    def get_tracks(self, cam_id):
-        try:
-            return list(self.td[cam_id].values())  # list of tuples
-        except KeyError:
-            return None
-    
-    def get_track(self, cam_id, match_id):
-        try:
-            self.td[cam_id][match_id]
-        except KeyError:
-            return None
-
-    def serialize(self, dir_path, title="tracks"):
-        d = dict()
-        d['td'] = self.td
-        d['frames_idx'] = self.frames_idx
-        pkl_path = os.path.join(dir_path, f'{title}.pkl')
-        utils.sys.clear_path(pkl_path)
-        with open(pkl_path, 'wb') as handle:
-            pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        return pkl_path
-
+### Utility functions 
 def cam_match_idx_to_track_id(cam_id, match_id):
     return (cam_id << BITS_TRACKS_PER_IMG) + match_id  # 2050 = 1<<11 + 2
 
@@ -126,41 +101,7 @@ def track_id_to_cam_match_idx(track_id):
     match_id = track_id % (1<<BITS_TRACKS_PER_IMG) # 2050 = 2
     return cam_id, match_id
 
-def read(tracks_pkl_path):
-        with open(tracks_pkl_path, 'rb') as handle:
-            d = pickle.load(handle)
-        tracks_db = Tracks_DB(td=d['td'], frames_idx=d['frames_idx'])
-        return tracks_db
-
-def re_serialize(pkl_path):
-    pkl_dir, name, ext = utils.sys.dir_name_ext(pkl_path)
-    print(pkl_dir, name, ext)
-    with open(pkl_path, 'rb') as handle:
-        d = pickle.load(handle)
-    print(d.keys())
-    d['ext_l0_to_li_s'] = d.pop('ext_l0_to_lj_s')
-    with open(pkl_path, 'wb') as handle:
-        pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def visualize_tracks_frame(tracks_pkl_path, i):
-    tracks_db = read(tracks_pkl_path)
-    kp_l = []
-    kp_r = []
-    pc_in_l0 = []
-    for track in tracks_db.get_tracks(i):
-        kp_l.append((track.left_x, track.left_y))
-        kp_r.append((track.right_x, track.right_y))
-        pc_in_l0.append(track.pc)
-    kp_l = np.array(kp_l).T
-    kp_r = np.array(kp_r).T
-    pc_in_l0 = np.array(pc_in_l0).T
-    img_li, img_ri = kitti.read_images(i)
-    utils.plot.plotly_kp_pc_inliers(img_li, img_ri, kp_l, kp_r, pc_in_l0, np.ones(pc_in_l0.shape[1], dtype=bool), title=f"tracks_vis_L0_CS_f={i}", save=False, plot=True)
-    ext_l0_to_li = tracks_db.ext_l0_to_li_s[i]
-    ext_li_to_l0 = utils.geometry.inv_extrinsics(ext_l0_to_li)
-    k, ext_id, ext_l_to_r = kitti.read_cameras()
-    pc_in_li = triangulate.triangulate(kp_l, kp_r, k, ext_id, ext_l_to_r)
-    pc_in_li_to_l0 = np.vstack((pc_in_li, np.ones(pc_in_li.shape[1])))
-    pc_in_li_to_l0 = ext_li_to_l0[:3] @ pc_in_li_to_l0
-
+if __name__=="__main__":
+    s = '473734'
+    res = track_id_to_cam_match_idx(int(s))
+    print(res)

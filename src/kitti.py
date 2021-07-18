@@ -4,16 +4,6 @@ import numpy as np
 import re
 import glob
 
-from utils import utils_img
-import utils
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
-
-DATASET_5_PATH = os.path.join('C:','Users', 'godin','Documents','VAN_ex','data','dataset05')
-DATASET_5_PATH_WSL = os.path.join(os.sep, 'mnt','c','Users','godin','Documents','VAN_ex','data','dataset05')
-IMAGES_05_PATH = os.path.join(DATASET_5_PATH, 'sequences', '05')
-POSES_05_TXT = os.path.join(DATASET_5_PATH, 'poses','05.txt')
-
-
 def data_path():
     cwd = os.getcwd()
     van_ind = cwd.rfind('VAN_ex')
@@ -55,10 +45,10 @@ def get_poses_path_from_dataset_path(dataset_path):
     return poses_path
 
 def read_cameras(dataset_path=None):
-    """:return: k - intrinsic matrix (shared by both cameras), (3,3)
-             m1 - extrinstic camera matrix [R|t] of left camera (3,4). With kitti this identity
-             m2 - extrinstic camera matrix [R|t] of right camera, (3,4)
-             to get camera matrix (P1), compute k @ m1  """
+    """:return: k - (3,3) intrinsics camera matrix (shared by both stereo cameras).
+             m1 - (3,4) extrinstic camera matrix [R|t] of left camera. With kitti this is the identity.
+             m2 - (3,4), extrinstic camera matrix [R|t] of right camera.
+             to get camera projection matrix from WORLD CS to left image, compute k @ m1  """
     # read camera matrices
     if dataset_path is None:
         dataset_path = data_path()
@@ -108,12 +98,6 @@ def read_poses_cam_to_world(idx=None, dataset_path=None):
                         return matrices
     return matrices
 
-def read_ln_to_li(i, n, dataset_path=None):
-    li_to_l0 = read_poses_cam_to_world([i], dataset_path)[0]
-    ln_to_l0 = read_poses_cam_to_world([n], dataset_path)[0]
-    ln_to_li = utils_img.B_to_A_mat(li_to_l0, ln_to_l0)
-    return ln_to_li
-
 def read_dws(idx=None, dataset_path=None):
     """ returns dws from kitti original matrices
     :param idx: list (size n) of lines to read. If none read all
@@ -124,34 +108,3 @@ def read_dws(idx=None, dataset_path=None):
     for m in matrices:
         dws.append(m[0:3,-1])
     return np.array(dws).T
-
-def read_poses_world_to_cam(idx=None, dataset_path=None):
-    matrices = read_poses_cam_to_world(idx=idx, dataset_path=dataset_path)
-    matrices = [utils_img.inv_extrinsics(m) for m in matrices]
-    return matrices
-
-def read_relative_poses_world_to_cam(idx=None, dataset_path=None):
-    """ from l{idx-1} to to l{idx}"""
-    ext_mats = read_poses_world_to_cam(idx, dataset_path)
-    r0_to_r1_s, t0_to_t1_s = [], []
-    for i in range(1, len(ext_mats)):
-        r0_to_r1, t0_to_t1 = utils.r0_to_r1_t0_to_t1(l0=ext_mats[i-1], l1=ext_mats[i])
-        r0_to_r1_s.append(r0_to_r1)
-        t0_to_t1_s.append(t0_to_t1)
-    r0_to_r1_s = np.array(r0_to_r1_s)
-    t0_to_t1_s = np.array(t0_to_t1_s)
-    return r0_to_r1_s, t0_to_t1_s.T
-
-def read_trans_vectors(idx=None, dataset_path=None):
-    """ returns translation vectors from (WORLD-TO-CAM) kitti matries
-    :param idx: list of lines to take of size n
-    :return: ndarray (3,n)
-    """
-    matrices = read_poses_world_to_cam(idx=idx, dataset_path=dataset_path)
-    trans_vecs = []
-    for m in matrices:
-        trans_vecs.append(m[0:3,-1])
-    return np.array(trans_vecs).T
-
-if __name__=="__main__":
-    pass

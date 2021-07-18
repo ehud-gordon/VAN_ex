@@ -5,10 +5,16 @@ from plotly.subplots import make_subplots
 from matplotlib import gridspec
 import scipy
 import os, webbrowser
+from utils.sys_utils import und_title, rund, lund
+import utils.sys_utils as sys_utils
+import utils.array
 
-from utils.utils import utils_sys, utils_arr
-from utils.utils import und_title, rund
 
+
+############ UTILS ############
+def get_color(i):
+    c = ['black','blue', 'orange', 'purple', 'gold' ,'limegreen', 'cyan','brown','silver', 'indigo', 'tomato', 'seashell', 'rosybrown', 'plum']
+    return c[i % len(c)]
 
 ############ MATPLOTLIB ############
 def plt_diff_trans_vecs(trans_diff, plot_dir,title, frames_idx=None, save=True, plot=False):
@@ -68,6 +74,7 @@ def plt_2D_cams(dws_labels_colors, title, plot_dir="plt", save=True, plot=False)
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     if plot:
         plt.show()
+
 def plt_3D_cams(dws_labels_colors, title, plot_dir="plt",save=True, plot=False):
     fig = plt.figure()
     xmin = ymin = zmin = np.inf; xmax = ymax = zmax = -np.inf
@@ -203,7 +210,7 @@ class Draw_KP_PC_INLIERS:
         self.fig.canvas.mpl_connect('key_press_event', self.onkeypress)
         plt.suptitle(f"frame={self.i} {title}")
         if save:
-            path = os.path.join(plot_dir, f'plt_kp_pc_inliers_{self.i}{utils_sys.lund(title)}' + '.png')
+            path = os.path.join(plot_dir, f'plt_kp_pc_inliers_{self.i}{lund(title)}' + '.png')
             plt.savefig(path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
@@ -215,17 +222,17 @@ def plotly_save_fig(fig, title="", plot_dir="", save=True, plot=True):
     if save:
         path = os.path.join(plot_dir, title + '.html')
         fig.write_html(path, auto_open=False)
-        json_dir = os.path.join(plot_dir, 'JSON'); utils_sys.make_dir_if_needed(json_dir)
+        json_dir = os.path.join(plot_dir, 'JSON'); sys_utils.make_dir_if_needed(json_dir)
         json_path = os.path.join(json_dir, title +'.JSON')
         fig.write_json(json_path)
-        png_dir = os.path.join(plot_dir,'PNG'); utils_sys.make_dir_if_needed(png_dir)
+        png_dir = os.path.join(plot_dir,'PNG'); sys_utils.make_dir_if_needed(png_dir)
         png_path = os.path.join(png_dir, title + '.png')
         fig.write_image(png_path)
-        if plot: webbrowser.open(utils_sys.path_to_windows(path), new=2)
+        if plot: webbrowser.open(sys_utils.path_to_windows(path), new=2)
     if not save and plot:
-        path = utils_sys.get_avail_path("tmp.html")
+        path = sys_utils.get_avail_path("tmp.html")
         fig.write_html(path, auto_open=False)
-        webbrowser.open(utils_sys.path_to_windows(path), new=2)
+        webbrowser.open(sys_utils.path_to_windows(path), new=2)
 
 def plotly_bar(y, bins=None, title="", plot_dir="", save=True, plot=False):
     if bins is None:
@@ -242,7 +249,7 @@ def plotly_hist(y, bins=None, title="", plot_dir="", density=True, save=True, pl
     if bins is None:
         bins = np.arange(np.max(y)+2)
     y_hist, bins = np.histogram(y, bins=bins, density=density)
-    plotly_bar(y=y_hist, bins=bins, title=title, plot=plot, plot_dir=plot_dir)
+    plotly_bar(y=y_hist, bins=bins, title=title, plot=plot,save=save, plot_dir=plot_dir)
 
 def plotly_2D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=True, plot=False):
     num_frames = dws_names_colors[0][0].shape[1] # 11
@@ -276,7 +283,6 @@ def plotly_2D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
     fig.add_traces(pose_traces); fig.add_traces(marker_traces)
     
 
-    
     # Create and add slider
     steps = []
     for i in range(num_frames):
@@ -297,7 +303,7 @@ def plotly_2D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
 
     plotly_save_fig(fig, f'2D_cams_{title}', plot_dir, save, plot)
 
-def plotly_3D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=True, plot=False):
+def plotly_3D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=True, plot=False, add_sliders=True):
     num_frames = dws_names_colors[0][0].shape[1] # 11
     num_traces = len(dws_names_colors)
     frames_idx = np.array(frames_idx) if frames_idx is not None else np.arange(0,num_frames)  # [0-10]
@@ -310,9 +316,6 @@ def plotly_3D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
         dws_names_colors = [(dws[:,inds], label, color) for dws,label,color in dws_names_colors]
         frames_idx = frames_idx[inds]
     
-    dws_list = [t[0] for t in dws_names_colors]
-    prev_x_list = [dws[0] for dws in dws_list]; prev_y_list = [dws[2] for dws in dws_list]; prev_z_list = [dws[1] for dws in dws_list]
-    
     # create scatters
     pose_traces, marker_traces = [], []
     for dw, name, color in dws_names_colors:
@@ -320,35 +323,41 @@ def plotly_3D_cams(dws_names_colors, title, plot_dir="", frames_idx=None, save=T
                                 marker=dict(size=3.5, color=color, opacity=0.5),
                                 hovertemplate="(%{x:.1f}, %{z:.1f}, %{y:.1f}) frame=%{text:.0f}",
                                 text=frames_idx, legendgroup=f"g{name}")
+        pose_traces.append(pose_trace)
+        if not add_sliders: continue
         marker_trace = go.Scatter3d(x=[dw[0,0]],  y=[dw[2,0]],  z=[dw[1,0]], 
                             mode="markers", legendgroup=f'g{name}', showlegend=False,
-                            marker=dict(color="blue"),name=name,
+                            marker=dict(color=color),name=name,
                             hovertemplate="(%{x:.1f},%{z:.1f},%{y:.1f})" + "<br>frame=%{text:.0f}",
                                           text=[frames_idx[0]])
-        pose_traces.append(pose_trace); marker_traces.append(marker_trace)
-    fig.add_traces(pose_traces); fig.add_traces(marker_traces)
+        marker_traces.append(marker_trace)
+    fig.add_traces(pose_traces)
+    if add_sliders: fig.add_traces(marker_traces)
 
     camera = dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0.2, y=-2, z=0.5) );fig.update_layout(scene_camera=camera)
     
-    # Create and add a slider
-    steps = []
-    for i in range(num_frames):
-        step = dict(method="update",  args=[
-                        {"x":prev_x_list + [[x_dws[i]] for x_dws in prev_x_list],
-                        "y": prev_y_list + [[y_dws[i]] for y_dws in prev_y_list],
-                        "z": prev_z_list + [[z_dws[i]] for z_dws in prev_z_list],
-                        "text": [frames_idx]*num_traces +[[frames_idx[i]] for _ in range(num_traces)]} ], label=f"{frames_idx[i]}")
-        steps.append(step)
-    sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
-    fig.update_layout(sliders=sliders)
+    if add_sliders:
+        # Create and add a slider
+        dws_list = [t[0] for t in dws_names_colors] # list of #num_traces objects, where dws_list[i] is the (3,n) dws associated with trace i
+        prev_x_list = [dws[0] for dws in dws_list]; prev_y_list = [dws[2] for dws in dws_list]; prev_z_list = [dws[1] for dws in dws_list]
+        steps = []
+        for i in range(num_frames):
+            step = dict(method="update",  args=[
+                            {"x":prev_x_list + [[x_dws[i]] for x_dws in prev_x_list],
+                            "y": prev_y_list + [[y_dws[i]] for y_dws in prev_y_list],
+                            "z": prev_z_list + [[z_dws[i]] for z_dws in prev_z_list],
+                            "text": [frames_idx]*num_traces +[[frames_idx[i]] for _ in range(num_traces)]} ], label=f"{frames_idx[i]}")
+            steps.append(step)
+        sliders = [dict(active=0, currentvalue={"prefix": "Frame="}, steps=steps)]
+        fig.update_layout(sliders=sliders)
     
     # fig.update_layout(margin=dict(l=0, r=0, t=40))
     fig.update_layout(showlegend=True)
-    fig.update_scenes(zaxis_autorange="reversed", xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='cube')
+    fig.update_scenes(zaxis_autorange="reversed", xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='data')
     fig.update_layout(title_text=title, title_x=0.5, font=dict(size=14))
     plotly_save_fig(fig, f'3D_cams_{title}', plot_dir, save, plot)
-    fig.update_scenes(aspectmode='data')
-    plotly_save_fig(fig, f'3D_cams_axes_equal_{title}', plot_dir, save, plot)
+    fig.update_scenes(aspectmode='cube')
+    plotly_save_fig(fig, f'3D_cams_unequal_axes_{title}', plot_dir, save, plot=False)
 
 def plotly_scatter(y, x=None, mode='lines+markers', title="", plot_dir="", xaxis="Frames", yaxis="Y", yrange=None, save=True, plot=False):
     scatter = go.Scatter(x=x, y=y, mode=mode)
@@ -365,18 +374,18 @@ def plotly_scatters(name_y_dict, x=None, title="", plot_dir="", mode='lines+mark
     if yrange: fig.update_yaxes(range=yrange)
     plotly_save_fig(fig, title, plot_dir, save, plot)
     
-def get_k_small(arr,k, min=True):
-    if not min:
+def get_k_small(arr,k, min_=True):
+    if not min_:
         arr = -arr
     inds = np.argpartition(arr,k)[:k]
     sort_inds = np.argsort(arr[inds])
     orig_sort_inds = inds[sort_inds]
     vals_sort = arr[orig_sort_inds]
-    if not min:
+    if not min_:
         vals_sort *= -1
     return orig_sort_inds, vals_sort
 
-def plotly_k_scatter(llsd, frames_idx, title="", plot_dir="",plot=False, save=True, k=5, yaxis="Y", min=True, kitti=False):
+def plotly_k_scatter(llsd, frames_idx, title="", plot_dir="",plot=False, save=True, k=5, yaxis="Y", min_=True, kitti=False):
     fig = go.Figure()
     vals_frames_idx = []
     vals_arr, inds_arr = [], []
@@ -387,7 +396,7 @@ def plotly_k_scatter(llsd, frames_idx, title="", plot_dir="",plot=False, save=Tr
         cur_frame = d['cur_frame']
         vals_frames_idx.append(cur_frame)
         vals = np.array(d['y'])
-        inds_k, vals_k  = get_k_small(vals, k, min=min)
+        inds_k, vals_k  = get_k_small(vals, k, min_=min_)
         vals_arr.append(vals_k); inds_arr.append(inds_k)
         if kitti: 
             rot_diffs = np.array(d['rot_diffs']); trans_diffs = np.array(d['trans_diffs'])
@@ -621,7 +630,7 @@ def plotly_inliers_outliers(img, kp, inliers_bool,  pc, title="", plot_dir="", p
 
     img_trace = go.Heatmap(z=img, colorscale='gray')
     fig.add_trace(img_trace, row=1, col=1)
-    kp_text = [f'({x:.1f}, {y:.1f})' for x, y in kp.T]
+
     inliers_kp = kp[:, inliers_bool]; inliers_kp_text = [f'({x:.1f}, {y:.1f})' for x,y in inliers_kp.T]
 
     outliers_kp = kp[:,~inliers_bool]; outliers_kp_text = [f'({x:.1f}, {y:.1f})' for x,y in outliers_kp.T]
@@ -686,9 +695,9 @@ def plotly_cov_dets(cov_cj_cond_ci_dict, frames_idx, title="", plot_dir="", plot
     plotly_scatters(dct1, x=frames_idx, title=f"det_cond_{title}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
     
     # cumsum
-    cumsum_cj_on_ci = utils_arr.cumsum_mats(cov_cj_cond_ci_s);
+    cumsum_cj_on_ci = utils.array.cumsum_mats(cov_cj_cond_ci_s)
     cumsum_cj_on_ci_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_cj_on_ci]
-    cumsum_ci_on_cj = utils_arr.cumsum_mats(cov_ci_cond_cj_s)
+    cumsum_ci_on_cj = utils.array.cumsum_mats(cov_ci_cond_cj_s)
     cumsum_ci_on_cj_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_ci_on_cj]
     dct1 = {'cumsum_lj_cond_li':cumsum_cj_on_ci_dets, 'cumsum_li_cond_lj':cumsum_ci_on_cj_dets}
     plotly_scatters(dct1, x=frames_idx, title=f"det_cumsum_cond_{title}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
@@ -702,34 +711,3 @@ def pose_graph_llsd(keyframes_idx, llsd_inliers, llsd_mahal, llsd_dets, title, p
         frames_slider_plot(llsd_inliers, title=f"inliers_frac_slider_{title}", plot_dir=plot_dir, yaxis="fraction of inliers", yrange=[0,1], plot=False, save=True)         
     if llsd_dets:
         frames_slider_plot(llsd_dets, title=f"det_distance_{title}", plot_dir=plot_dir, yaxis="determinant distance", plot=False, save=True)
-
-# if __name__=="__main__":
-#     my_dws = np.array([[0, -0.004751, -0.01733, -0.02374, -0.02972, -0.03907, -0.05193, -0.06274, -0.07457, -0.09065,
-#                         -0.113, -0.1339, -0.1606, -0.1888, -0.2123, -0.2353, -0.2611, -0.2875, -0.308, -0.3268, -0.3465,
-#                         -0.3669, -0.3896, -0.4119, -0.4335, -0.4608, -0.4814, -0.4955, -0.517, -0.5386, -0.5611,
-#                         -0.5823, -0.6074, -0.6329, -0.6569, -0.6807, -0.7041, -0.7271, -0.7565, -0.7859, -0.8093,
-#                         -0.8333, -0.8557, -0.8819, -0.909, -0.9387, -0.9683, -0.9989, -1.031, -1.061, -1.093],[0, -0.01047, -0.02652, -0.03871, -0.05046, -0.06306, -0.08161, -0.09546, -0.1162, -0.1349,
-#                         -0.1567, -0.1749, -0.1893, -0.2049, -0.2205, -0.2383, -0.2554, -0.2636, -0.2664, -0.271,
-#                         -0.2803, -0.2863, -0.2884, -0.2893, -0.2887, -0.2915, -0.3015, -0.3129, -0.3239, -0.3437,
-#                         -0.3679, -0.3938, -0.4187, -0.445, -0.4759, -0.5089, -0.5426, -0.577, -0.6097, -0.6417, -0.6742,
-#                         -0.7039, -0.7336, -0.7621, -0.7896, -0.8157, -0.8407, -0.8659, -0.8908, -0.9154, -0.9394],[0, 0.5756, 1.154, 1.723, 2.291, 2.862, 3.444, 4.033, 4.628, 5.231, 5.842, 6.462, 7.104, 7.764,
-#                         8.442, 9.128, 9.819, 10.52, 11.24, 11.99, 12.76, 13.55, 14.36, 15.18, 16.01, 16.86, 17.72, 18.6,
-#                         19.5, 20.42, 21.35, 22.29, 23.24, 24.21, 25.19, 26.17, 27.17, 28.17, 29.19, 30.22, 31.25, 32.29,
-#                         33.34, 34.39, 35.46, 36.52, 37.6, 38.68, 39.77, 40.86, 41.95]])
-#     kitti_dws = np.array([[1.11e-16, 0.0035, 0.001174, -0.007832, -0.01508, -0.0204, -0.02969, -0.04153, -0.05594,
-#                            -0.07008, -0.08798, -0.1055, -0.1239, -0.1445, -0.1645, -0.1845, -0.2077, -0.233, -0.2538,
-#                            -0.2701, -0.2821, -0.2962, -0.3128, -0.3271, -0.3451, -0.3586, -0.3661, -0.3686, -0.3813,
-#                            -0.3931, -0.4066, -0.4197, -0.4376, -0.4507, -0.4686, -0.4871, -0.5056, -0.5259, -0.5465,
-#                            -0.5679, -0.5885, -0.6114, -0.6342, -0.6563, -0.68, -0.7046, -0.7318, -0.7509, -0.7637,
-#                            -0.7861, -0.812],[0, -0.009789, -0.02241, -0.04141, -0.05923, -0.07423, -0.09078, -0.1099, -0.1348, -0.1576,
-#                            -0.1803, -0.1997, -0.2188, -0.2366, -0.2543, -0.2738, -0.2924, -0.3036, -0.3092, -0.3152,
-#                            -0.3207, -0.3252, -0.3292, -0.33, -0.3299, -0.3311, -0.3374, -0.3507, -0.3643, -0.3836,
-#                            -0.4079, -0.4351, -0.4631, -0.4914, -0.5208, -0.5505, -0.5807, -0.6123, -0.6431, -0.6738,
-#                            -0.7048, -0.7345, -0.7659, -0.7961, -0.8251, -0.8521, -0.8792, -0.8999, -0.9174, -0.9426,
-#                            -0.9707], [2.22e-16, 0.5654, 1.128, 1.689, 2.251, 2.816, 3.39, 3.969, 4.556, 5.15, 5.751, 6.364, 6.99,
-#                            7.638, 8.302, 8.978, 9.662, 10.35, 11.06, 11.8, 12.56, 13.34, 14.12, 14.93, 15.75, 16.58,
-#                            17.43, 18.29, 19.17, 20.07, 20.99, 21.92, 22.88, 23.85, 24.82, 25.81, 26.79, 27.8, 28.8,
-#                            29.82, 30.84, 31.87, 32.9, 33.95, 35, 36.07, 37.13, 38.2, 39.28, 40.35, 41.43]])
-#     plot_dir = os.getcwd()
-    # plotly_2D_cams_compare(my_dws, kitti_dws, plot_dir=plot_dir, save=True, title="Title")
-

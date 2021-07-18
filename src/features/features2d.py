@@ -6,15 +6,11 @@ Uses cv2.
 import cv2
 import numpy as np
 
-import os
 from itertools import compress
 
-import kitti
 import utils
-
 from .plot import DrawMatchesDouble
 import utils.array
-import utils.sys_utils as sys_utils
 
 LOWE_THRESHOLD = 0.7 # threshold to use in knn matching
 MATCH_Y_DIST_MAX = 2
@@ -131,18 +127,19 @@ class Features:
             keypoints1, descriptors1 = self.detectAndCompute(img=img1, plot_keypoints=self.plot_keypoints)  # (2, n1), ndarray (32, n1)
             keypoints2, descriptors2 = self.detectAndCompute(img=img2, plot_keypoints=self.plot_keypoints)  # (2, n2), ndarray (32, n2)
 
-        matches = self.matcher.match(queryDescriptors=descriptors1.T, trainDescriptors=descriptors2.T)  # list of matches [DMatch1,... DMatch1N]
-        matches = filter_matches(matches, keypoints1=keypoints1, keypoints2=keypoints2, is_stereo=is_stereo)
+        matches = self.Match(keypoints1, descriptors1, keypoints2, descriptors2, is_stereo=is_stereo)
 
         keypoints1_matched, descriptors1_matched, keypoints2_matched = filter_with_matches(matches, [keypoints1, descriptors1],[keypoints2])
         if self.plot_matches:
             fig_drawer = DrawMatchesDouble(img1, img2, keypoints1_matched, keypoints2_matched)
             fig_drawer.draw_matches_double(0, save=False, title=f'{self.matcher_type}_{self.detector}_{self.descriptor}_is_stereo={is_stereo}')
+
         return keypoints1_matched, descriptors1_matched, keypoints2_matched
 
-    def MatchTwoStereoPairs(self, keypoints1, descriptors1, keypoints2, descriptors2):
+
+    def Match(self, keypoints1, descriptors1, keypoints2, descriptors2, is_stereo):
         matches = self.matcher.match(descriptors1.T, descriptors2.T)  # list of matches [DMatch1,... DMatch1N]
-        return filter_matches(matches, keypoints1, keypoints2, is_stereo=False)
+        return filter_matches(matches, keypoints1, keypoints2, is_stereo)
 
 def filter_matches(matches, keypoints1, keypoints2, is_stereo):
     """ filter matches based on stereo criteria, and also 2 percent of matches with largest match distance"""

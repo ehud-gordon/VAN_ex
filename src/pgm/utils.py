@@ -1,3 +1,4 @@
+""" Collection of utilities for use with gtsam package """
 import gtsam
 import utils.geometry
 from gtsam import KeyVector, Pose3
@@ -9,8 +10,8 @@ from collections import defaultdict
 from gtsam.symbol_shorthand import X
 import os, pickle
 
-import src.utils
-from src.utils.sys import und_title
+import utils
+from utils.sys_utils import und_title
 
 
 #### GEOMETRY ####
@@ -41,13 +42,13 @@ def Pose3_values_from_exts(exts, frames_idx):
     assert len(frames_idx) == len(exts)
     Pose3_values = gtsam.Values()
     for ext, i in zip(exts, frames_idx):
-        Pose3_values.insert( X(i), gtsam.Pose3(ext) )
+        Pose3_values.insert(X(i), gtsam.Pose3(ext))
     return Pose3_values
 
 def t2v(pose3):
     rot_mat = pose3.rotation().matrix()    
     trans = pose3.translation()
-    return src.utils.geometry.t2v(rot_mat, trans)
+    return utils.geometry.t2v(rot_mat, trans)
 
 def comp_mahal_dist(Pose3_cn_to_ci, cov_cn_cond_ci):
     t2v_n_to_i = t2v(Pose3_cn_to_ci)
@@ -57,9 +58,10 @@ def comp_mahal_dist(Pose3_cn_to_ci, cov_cn_cond_ci):
 def rot_trans_norm_from_Pose3(pose):
     rot = pose.rotation().matrix()
     trans = pose.translation()
-    return src.utils.geometry.rot_trans_norm(rot, trans)
+    return utils.geometry.rot_trans_norm(rot, trans)
 
 def get_gt_k(k, ext_l_to_r):
+    """ Create camera matrix in format gtsam requires for GenericStereoFactor3D"""
     fx, skew, cx, _, fy, cy = k[0:2, 0:3].flatten()
     baseline = ext_l_to_r[0, 3]
     gt_k = gtsam.Cal3_S2Stereo(fx, fy, skew, cx, cy, -baseline)
@@ -77,10 +79,10 @@ def extract_to_c0_from_to_dict(from_to_dict, keyframes_idx, as_ext=True):
         cj_to_ci_list.append(from_to_dict[j][j-1])
     
     if type(cj_to_ci_list[0]).__module__ == np.__name__:
-        ext_ci_to_c0_s = src.utils.geometry.concat_cj_to_ci_s(cj_to_ci_list)
+        ext_ci_to_c0_s = utils.geometry.concat_cj_to_ci_s(cj_to_ci_list)
     else:
         ext_cj_to_ci_s = [pose.matrix() for pose in cj_to_ci_list]
-        ext_ci_to_c0_s = src.utils.geometry.concat_cj_to_ci_s(ext_cj_to_ci_s)
+        ext_ci_to_c0_s = utils.geometry.concat_cj_to_ci_s(ext_cj_to_ci_s)
     if as_ext:
         return ext_ci_to_c0_s
     else:
@@ -88,12 +90,18 @@ def extract_to_c0_from_to_dict(from_to_dict, keyframes_idx, as_ext=True):
 
 
 #### MARGINALS ####
-def extract_cov_ln_cond_li_from_marginals(marginals, i_frame, n_frame): # 20, 10
-    """ return Sigma n|i """
-    keys = KeyVector([X(i_frame), X(n_frame)])
-    ln_cond_on_li_idx_info = marginals.jointMarginalInformation(keys).at( X(n_frame), X(n_frame) )
-    ln_cond_on_li_idx_cov = np.linalg.inv(ln_cond_on_li_idx_info)
-    return ln_cond_on_li_idx_cov
+def extract_conditional_covariance(marginals, i, n):
+    """ compute conditional covariance
+
+    :param marginals: gtsam.Marginals object
+    :param i: index of frame/camera i
+    :param n: index of frame/camera i
+    :return: return Sigma n|i
+    """
+    keys = KeyVector([X(i), X(n)])
+    n_cond_on_i_info = marginals.jointMarginalInformation(keys).at(X(n), X(n))
+    n_cond_on_i_cov = np.linalg.inv(n_cond_on_i_info)
+    return n_cond_on_i_cov
 
 def extract_cov_ln_key_cond_li_from_marginals(marginals, li_idx, ln_idx_key):
     """ return Sigma li|l0 """
@@ -190,7 +198,7 @@ def deserialize_stage5(pkl_path, as_ext=False, concat=False):
     if concat: 
         ext_lj_to_li_s =[new_from_to_ext_dict[0][0]]
         ext_lj_to_li_s += [ new_from_to_ext_dict[j][j-1] for j in range(1,len(keyframes_idx))]
-        ext_li_to_l0_s = src.utils.geometry.concat_cj_to_ci_s(ext_lj_to_li_s)
+        ext_li_to_l0_s = utils.geometry.concat_cj_to_ci_s(ext_lj_to_li_s)
         return ext_li_to_l0_s, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
     if as_ext:
         return new_from_to_ext_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
@@ -277,9 +285,9 @@ def plotly_cond_trajectory2(ext_ci_to_c0_s, cumsum_cov_cj_cond_ci, name, frames_
     title1 = f"left camera location {title}"
     fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
     fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='data')); fig.update_scenes(zaxis_autorange="reversed")
-    src.utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_data_{title}', plot_dir, save, plot)
+    utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_data_{title}', plot_dir, save, plot)
     fig.update_layout(scene=dict(aspectmode='cube'))
-    src.utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_cube_{title}', plot_dir, save, plot)
+    utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_cube_{title}', plot_dir, save, plot)
 
 def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, name, frames_idx, title="", plot_dir="", save=True, plot=False):
     ext_c_to_w_s = [pose.matrix() for pose in Pose3_c_to_w_list]
@@ -302,7 +310,7 @@ def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, 
         j_kf = frames_idx[j]
         pose = Pose3_c_to_w_list[j]
         P = marginals.marginalCovariance( X(j_kf) )
-        P = extract_cov_ln_cond_li_from_marginals(marginals, 0, j_kf)
+        P = extract_conditional_covariance(marginals, 0, j_kf)
         # P= cumsum_cov_cj_cond_ci[j-1]
 
         ellipse_trace = get_ellipse_trace(pose, P)
@@ -315,7 +323,7 @@ def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, 
     fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
     # fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Y', zaxis_title='Z', aspectmode='cube'))
     fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='cube')); fig.update_scenes(zaxis_autorange="reversed")
-    src.utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_{title}', plot_dir, save, plot)
+    utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_{title}', plot_dir, save, plot)
 
 def plt_plot_cov_trajectory(fignum, Pose3_c_to_w_list, cov_list, frames_idx, title="", plot_dir="", save=True, plot=False):
     fig = plt.figure(fignum)

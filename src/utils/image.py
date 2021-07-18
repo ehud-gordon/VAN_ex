@@ -2,8 +2,7 @@ import cv2
 from matplotlib import pyplot as plt
 
 import os
-
-from utils import utils_sys
+import utils.sys_utils as sys_utils
 
 def plt_show_img(img, name="", plot_dir="", save=False):
     plt.axis('off'); plt.margins(0, 0)
@@ -12,7 +11,7 @@ def plt_show_img(img, name="", plot_dir="", save=False):
     if save:
         name = name if name else 'img'
         path = os.path.join(plot_dir, name + '.png')
-        path = utils_sys.get_avail_path(path)
+        path = sys_utils.get_avail_path(path)
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.show()
 
@@ -21,7 +20,7 @@ def cv_show_img(img, title='', plot_dir="", save=False):
     if save:
         title = title if title else 'res'
         path = os.path.join(plot_dir, title +'.png')
-        path = utils_sys.get_avail_path(path)
+        path = sys_utils.get_avail_path(path)
         cv2.imwrite(path, img)
 
 def bgr_rgb(img):

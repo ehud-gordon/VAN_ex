@@ -5,109 +5,66 @@ but the code uses cv2.triangulatePoints(), for performance reasons.
 
 import matplotlib.pyplot as plt
 import numpy as np
-
+import cv2
 import os
+import utils
+import utils.sys_utils as sys_utils
 
-import utils.utils_sys
-from utils import utils_sys, utils_arr, utils_img
-from utils import utils
-
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
-
-def relative_inliers(pc):
-    """ :param pc: (3,n) """
-    x_abs = np.abs(pc[0]); y_abs = np.abs(pc[1])
-    x_crit = (x_abs <= 30)
-    y_crit = (y_abs <= 30)
-    z_crit1 = pc[2] < 200
-    z_crit2 = pc[2] > 1
-    z_crit = z_crit1 * z_crit2
-    inliers = (x_crit * y_crit) * z_crit
-    return inliers
-
-def isolation_forest_inliers(pc, n_est=100, cont=0.01):
-    from sklearn.ensemble import IsolationForest
-    clf = IsolationForest(n_estimators=n_est, contamination=cont)
-    inliers_is_forest = (clf.fit_predict(pc.T) > 0)
-    return inliers_is_forest
-
-def quantile_inliers(pc, q=0.99):
-    pc_abs = np.abs(pc)
-    x_quant, y_quant, z_quant = np.quantile(pc_abs, q=q, axis=1)
-    x_crit = (pc_abs[0] <= x_quant)
-    y_crit = (pc_abs[1] <= y_quant)
-    z_crit = (pc_abs[2] <= z_quant)
-    inliers = x_crit * y_crit * z_crit
-    return inliers
-
-def quant_forest(pc, q=0.99, n_est=100, cont=0.01, less_inliers=True):
-    """ :param pc: (3,n) """
-    inliers_quant = quantile_inliers(pc, q=q)
-    inliers_is_for = isolation_forest_inliers(pc, n_est=n_est, cont=cont)
-    if less_inliers:
-        less_inliers = inliers_quant * inliers_is_for # AND (less inliers, more outliers)
-        return less_inliers
-    else:
-        more_inliers = ~(~inliers_quant * ~inliers_is_for) # OR (more inliers, less outliers)
-        return more_inliers
-
-def triang(keypointsA, keypointsB, k, ext_WORLD_to_A, ext_WORLD_to_B):
+def triangulate(pixels1, pixels2, k, ext_WORLD_to_1, ext_WORLD_to_2):
     """
-    get 3D, WORLD coordinates, via triangulation of matched pixels from two images
-    :param keypointsA/B: pixels of matched points in image A/B, (2,n)
-    :param k: intrinsics  matrix shared by cameras A and B, (3,4)
-    :param ext_WORLD_to_A: extrinsics matrix from WORLD to coordinate systes A (4,4)
-    :param ext_WORLD_to_B: extrinsics matrix from WORLD to coordinate system B (4,4)
+    Get 3D, WORLD coordinates, via triangulation of matched pixels from two images
+    :param pixels1: (2,n) ndarray of pixels in images 1 that're matched to pixels2
+    :param pixels2: (2,n) ndarray of pixels in images 2 that're matched to pixels1
+    :param k: intrinsics matrix shared by cameras 1 and 2, (3,4) ndarray
+    :param ext_WORLD_to_1: extrinsics matrix from WORLD to coordinate-system 1, (4,4) ndarray
+    :param ext_WORLD_to_2: extrinsics matrix from WORLD to coordinate-system 2, (4,4) ndarray
     :return: pc_3d: a (3,n) ndarray of the point cloud - landmarks in WORLD coordinate-system
     """
-    assert keypointsA.shape == keypointsB.shape
-    proj_WORLD_to_A = k @ ext_WORLD_to_A  # (3,4) # projection matrix
-    proj_WORLD_to_B = k @ ext_WORLD_to_B  # (3,4)
-
-    pc_4d = cv2.triangulatePoints(projMatr1=proj_WORLD_to_A, projMatr2=proj_WORLD_to_B, projPoints1=keypointsA, projPoints2=keypointsB)  # (4,n)
+    assert pixels1.shape == pixels2.shape
+    proj_WORLD_to_1 = k @ ext_WORLD_to_1  # (3,4) ndarray, projection matrix from world CS to CS1
+    proj_WORLD_to_2 = k @ ext_WORLD_to_2  # (3,4) ndarray, projection matrix from world CS to CS2
+    # get pc (point cloud)
+    pc_4d = cv2.triangulatePoints(projMatr1=proj_WORLD_to_1, projMatr2=proj_WORLD_to_2, projPoints1=pixels1, projPoints2=pixels2)  # (4,n)
     pc_3d = pc_4d[0:3] / pc_4d[-1]  # (3,n)
     return pc_3d # points in WORLD CS
 
-def my_triang(pxls1, pxls2, cam_mat1, cam_mat2):
+def my_triangulate(pixels1, pixels2, projMatr1, projMatr2):
     """
-    :param pxls1/2: (2,n) ndarray of (x,y) of pixels of matching keypoints in image 1/2
-    :param cam_mat1/2: (3,4) ndarray of projection matrix of camera 1/2
-    :return: (3,n) ndarray
+    Get 3D, WORLD coordinates, via triangulation of matched pixels from two images
+    :param pixels1: (2,n) ndarray of pixels in images 1 that're matched to pixels2
+    :param pixels2: (2,n) ndarray of pixels in images 2 that're matched to pixels1
+    :param projMatr1: projection matrix from WORLD to image 1, (3,4) ndarray
+    :param projMatr2: projection matrix from WORLD to image 2, (3,4) ndarray
+    :return: pc_3d: a (3,n) ndarray of the point cloud - landmarks in WORLD coordinate-system
     """
-    assert pxls1.shape == pxls2.shape
-    assert cam_mat1.shape == cam_mat2.shape == (3,4)
-    num_points = pxls1.shape[1]
-    new_points = np.zeros((4,num_points))
-    p1,p2,p3 = cam_mat1
-    p1_, p2_, p3_ = cam_mat2
+    assert pixels1.shape == pixels2.shape
+    assert projMatr1.shape == projMatr2.shape == (3, 4)
+    num_points = pixels1.shape[1]
+    pc_4d = np.zeros((4,num_points)) # point cloud in homogeneous coordinates
+    p1,p2,p3 = projMatr1
+    p1_, p2_, p3_ = projMatr2
     for i in range(num_points):
-        x,y = pxls1[:,i]
-        x_,y_ = pxls2[:, i]
+        x,y = pixels1[:, i]
+        x_,y_ = pixels2[:, i]
         A = np.vstack((p3*x - p1, p3*y - p2, p3_*x_- p1_, p3_*y_ - p2_ ))
         u,s,vh = np.linalg.svd(A)
         X = vh[-1,:] # (4,)
 
         # iterative Least Squares
-        # for j in range(50):
-        #     first_eq = X @ p3
-        #     second_eq = X @ p3_
-        #     B = np.vstack((A[:2]*first_eq, A[2:]*second_eq))
-        #     u, s, vh = np.linalg.svd(B)
-        #     X = vh[-1, :]  # (4,)
+        for j in range(50):
+            first_eq = X @ p3
+            second_eq = X @ p3_
+            B = np.vstack((A[:2]*first_eq, A[2:]*second_eq))
+            u, s, vh = np.linalg.svd(B)
+            X = vh[-1, :]  # (4,)
 
-        new_points[:,i] = X
-    inhom_points = new_points[:-1,:] / (new_points[-1].reshape(1,-1)) # (3,n)
-    return inhom_points
-
-
-def triang_and_rel_filter(kpA, kpB, k, ext_WORLD_to_A, ext_WORLD_to_B, *nd_arrays):
-    pc = triang(kpA, kpB, k, ext_WORLD_to_A, ext_WORLD_to_B)
-    rel_filter = relative_inliers(pc)
-    return utils_arr.filt_np(rel_filter, kpA, kpB, pc, *nd_arrays)
+        pc_4d[:,i] = X
+    pc_3d = pc_4d[:-1,:] / (pc_4d[-1].reshape(1,-1)) # (3,n) ndarray
+    return pc_3d
 
 
-#########################   Visualization utils  #########################
-def vis_pc(pc, title="", save=False, inliers_bool=None, hist=False):
+#########################   Visualization Tools  #########################
+def draw_point_cloud(pc, title="", save=False, inliers_bool=None, hist=False):
     """ :param pc: (3,num_of_matches), inhomogeneous"""
     assert pc.shape[0] in [3,4]
     if pc.shape[0] == 4:
@@ -138,15 +95,15 @@ def vis_pc(pc, title="", save=False, inliers_bool=None, hist=False):
     ax.set_xlabel('X'); ax.set_ylabel('Z'); ax.set_zlabel('Y') # not a mistake
     plt.legend()
     if save:
-        path = utils_sys.get_avail_path(os.path.join(utils.utils_sys.out_dir(), f'{title}_pc.png'))
+        path = sys_utils.get_avail_path(os.path.join(sys_utils.out_dir(), f'{title}_pc.png'))
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.show()
 
-def vis_triang(img, pc, pxls, title="", save=False):
+def draw_triangulation(img, pc, pxls, title="", save=False):
     """ :param pc: (3,num_of_matches)
         :param pxls: (2,num_of_matches) """
     assert pc.shape[1] == pxls.shape[1]
-    vis_pc(pc=pc,title=title, save=save)
+    draw_point_cloud(pc=pc, title=title, save=save)
     # plot pxls with txt indicating their 3d location
     img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     num_matches = pc.shape[1]
@@ -160,9 +117,4 @@ def vis_triang(img, pc, pxls, title="", save=False):
         img = cv2.putText(img, f'{x_w:.1f},{y_w:.1f},{z_w:.1f}', (x, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3,
                            color=(0, 255, 255), lineType=cv2.LINE_AA)
     print()
-    utils_img.cv_disp_img(img, title=f"{title}_vis_tr", save=save)
-
-if __name__=="__main__":
-    import cv2
-
-    pass
+    utils.image.cv_show_img(img, title=f"{title}_vis_tr", save=save)
