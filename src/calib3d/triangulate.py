@@ -1,10 +1,16 @@
+"""
+Performs triangulation. I've also included my version,
+but the code uses cv2.triangulatePoints(), for performance reasons.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
-import cv2
 
 import os
 
-import utils
+import utils.utils_sys
+from utils import utils_sys, utils_arr, utils_img
+from utils import utils
 
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
@@ -45,27 +51,59 @@ def quant_forest(pc, q=0.99, n_est=100, cont=0.01, less_inliers=True):
         more_inliers = ~(~inliers_quant * ~inliers_is_for) # OR (more inliers, less outliers)
         return more_inliers
 
-def triang(kpA, kpB, k, ext_WORLD_to_A, ext_WORLD_to_B):
+def triang(keypointsA, keypointsB, k, ext_WORLD_to_A, ext_WORLD_to_B):
     """
     get 3D, WORLD coordinates, via triangulation of matched pixels from two images
-    :param kpA/B: pixels of matched points in imageA/B, (2,n)
+    :param keypointsA/B: pixels of matched points in image A/B, (2,n)
     :param k: intrinsics  matrix shared by cameras A and B, (3,4)
-    :param mA: extrinsics matrix from WORLD to CS_A (4,4)
-    :param mB: extrinsics matrix from WORLD to CS_B (4,4)
-    :return: (3,n) ndarray of world coordinates in WORLD CS (in kitti, this means left0)
+    :param ext_WORLD_to_A: extrinsics matrix from WORLD to coordinate systes A (4,4)
+    :param ext_WORLD_to_B: extrinsics matrix from WORLD to coordinate system B (4,4)
+    :return: pc_3d: a (3,n) ndarray of the point cloud - landmarks in WORLD coordinate-system
     """
-    assert kpA.shape == kpB.shape
+    assert keypointsA.shape == keypointsB.shape
     proj_WORLD_to_A = k @ ext_WORLD_to_A  # (3,4) # projection matrix
     proj_WORLD_to_B = k @ ext_WORLD_to_B  # (3,4)
 
-    pc_4d = cv2.triangulatePoints(projMatr1=proj_WORLD_to_A, projMatr2=proj_WORLD_to_B, projPoints1=kpA, projPoints2=kpB)  # (4,n)
+    pc_4d = cv2.triangulatePoints(projMatr1=proj_WORLD_to_A, projMatr2=proj_WORLD_to_B, projPoints1=keypointsA, projPoints2=keypointsB)  # (4,n)
     pc_3d = pc_4d[0:3] / pc_4d[-1]  # (3,n)
     return pc_3d # points in WORLD CS
+
+def my_triang(pxls1, pxls2, cam_mat1, cam_mat2):
+    """
+    :param pxls1/2: (2,n) ndarray of (x,y) of pixels of matching keypoints in image 1/2
+    :param cam_mat1/2: (3,4) ndarray of projection matrix of camera 1/2
+    :return: (3,n) ndarray
+    """
+    assert pxls1.shape == pxls2.shape
+    assert cam_mat1.shape == cam_mat2.shape == (3,4)
+    num_points = pxls1.shape[1]
+    new_points = np.zeros((4,num_points))
+    p1,p2,p3 = cam_mat1
+    p1_, p2_, p3_ = cam_mat2
+    for i in range(num_points):
+        x,y = pxls1[:,i]
+        x_,y_ = pxls2[:, i]
+        A = np.vstack((p3*x - p1, p3*y - p2, p3_*x_- p1_, p3_*y_ - p2_ ))
+        u,s,vh = np.linalg.svd(A)
+        X = vh[-1,:] # (4,)
+
+        # iterative Least Squares
+        # for j in range(50):
+        #     first_eq = X @ p3
+        #     second_eq = X @ p3_
+        #     B = np.vstack((A[:2]*first_eq, A[2:]*second_eq))
+        #     u, s, vh = np.linalg.svd(B)
+        #     X = vh[-1, :]  # (4,)
+
+        new_points[:,i] = X
+    inhom_points = new_points[:-1,:] / (new_points[-1].reshape(1,-1)) # (3,n)
+    return inhom_points
+
 
 def triang_and_rel_filter(kpA, kpB, k, ext_WORLD_to_A, ext_WORLD_to_B, *nd_arrays):
     pc = triang(kpA, kpB, k, ext_WORLD_to_A, ext_WORLD_to_B)
     rel_filter = relative_inliers(pc)
-    return utils.filt_np(rel_filter, kpA, kpB, pc, *nd_arrays)
+    return utils_arr.filt_np(rel_filter, kpA, kpB, pc, *nd_arrays)
 
 
 #########################   Visualization utils  #########################
@@ -100,7 +138,7 @@ def vis_pc(pc, title="", save=False, inliers_bool=None, hist=False):
     ax.set_xlabel('X'); ax.set_ylabel('Z'); ax.set_zlabel('Y') # not a mistake
     plt.legend()
     if save:
-        path = utils.get_avail_path(os.path.join(utils.out_dir(), f'{title}_pc.png'))
+        path = utils_sys.get_avail_path(os.path.join(utils.utils_sys.out_dir(), f'{title}_pc.png'))
         plt.savefig(path, bbox_inches='tight', pad_inches=0)
     plt.show()
 
@@ -122,8 +160,9 @@ def vis_triang(img, pc, pxls, title="", save=False):
         img = cv2.putText(img, f'{x_w:.1f},{y_w:.1f},{z_w:.1f}', (x, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3,
                            color=(0, 255, 255), lineType=cv2.LINE_AA)
     print()
-    utils.cv_disp_img(img, title=f"{title}_vis_tr",save=save)
+    utils_img.cv_disp_img(img, title=f"{title}_vis_tr", save=save)
 
 if __name__=="__main__":
-    import kitti, features, cv2, my_plot
+    import cv2
+
     pass

@@ -1,23 +1,17 @@
-from collections import defaultdict
-import pickle
-import time
+import numpy as np
+from numpy import pi
 
 import gtsam
 from gtsam.symbol_shorthand import X, P
-from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D, Point3, KeyVector
-from gtsam.utils import plot as g_plot
-import numpy as np
-from numpy import pi as pi
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D, Point3
+
+from collections import defaultdict
 import os
+import time
 
-from numpy.random import f
-
-import tracks, utils, kitti, my_plot, utils, results
-import gtsam_utils as g_utils
-
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
+import src.utils as utils
+import kitti, results
+import src.gtsam.utils as g_utils
 
 class FactorGraphSLAM:
     def __init__(self, ext_li_to_lj_s, tracks_db, out_path):
@@ -46,10 +40,10 @@ class FactorGraphSLAM:
 
     def init_folders(self):
         self.stage3_dir = os.path.join(self.out_path, 'stage3')
-        utils.clear_and_make_dir(self.stage3_dir)
+        utils.sys.clear_and_make_dir(self.stage3_dir)
         if self.single_bundle_plots:
             self.single_bundle_plot_dir = os.path.join(self.stage3_dir, 'single_bundle')
-            utils.clear_and_make_dir(self.single_bundle_plot_dir)
+            utils.sys.clear_and_make_dir(self.single_bundle_plot_dir)
     
     def main(self):
         Pose3_lj_to_li_keyframes = []
@@ -65,7 +59,7 @@ class FactorGraphSLAM:
             startframe = bundelon_frames_idx[0]; endframe = bundelon_frames_idx[-1]
             bundelon_ext_li_to_lj_s = self.ext_li_to_lj_s[ (i+1):(i+self.bundle_len) ]  # [21-to_20, ,...,30_to_29]
             bundelon_ext_li_to_lj_s.insert(0, self.ext_id) # # [id, 21-to_20, ,...,30_to_29]
-            bundelon_ext_li_to_l0_s = utils.concat_and_inv_ci_to_cj_s(bundelon_ext_li_to_lj_s) # [l20_to_l20, l21_to_l20,...,l30_to_l20]
+            bundelon_ext_li_to_l0_s = utils.geometry.concat_and_inv_ci_to_cj_s(bundelon_ext_li_to_lj_s) # [l20_to_l20, l21_to_l20,...,l30_to_l20]
             values, error_before, error_after, marginals = do_single_bundle(bundelon_frames_idx, bundelon_ext_li_to_l0_s, self.tracks_db, self.gt_k)
             # output bundelon results
             cov_lend_cond_on_lstart = g_utils.extract_cov_ln_cond_li_from_marginals(marginals, startframe, endframe)
@@ -89,13 +83,13 @@ class FactorGraphSLAM:
     def output_results(self, Pose3_lj_to_li_keyframes, cov_lj_cond_li_dict, start_time):
         # output important plots and stats
         ext_lj_to_li_keyframes = [pose.matrix() for pose in Pose3_lj_to_li_keyframes]
-        ext_li_to_l0_keyframes = utils.concat_cj_to_ci_s(ext_lj_to_li_keyframes)
+        ext_li_to_l0_keyframes = utils.geometry.concat_cj_to_ci_s(ext_lj_to_li_keyframes)
         rots_total_error, trans_total_error = results.output_results(self.out_path, ext_li_to_l0_keyframes,
                             self.keyframes_idx, "stage_3", start_time, plot=False, save=self.save)
 
         # rename stage3 folder
         new_stage3_dir = self.stage3_dir + f'_{trans_total_error:.1f}_{rots_total_error:.1f}'
-        new_stage3_dir = utils.get_avail_path(new_stage3_dir)
+        new_stage3_dir = utils.sys.get_avail_path(new_stage3_dir)
         os.rename(self.stage3_dir, new_stage3_dir)
         self.stage3_dir = new_stage3_dir
         
@@ -104,12 +98,12 @@ class FactorGraphSLAM:
             f.writelines('\n'.join(self.stats))
 
         # plot determinant of covariance matrices
-        my_plot.plotly_cov_dets(cov_lj_cond_li_dict, self.keyframes_idx, title="stage3", plot_dir=self.stage3_dir, plot=False, save=self.save)
+        utils.plot.plotly_cov_dets(cov_lj_cond_li_dict, self.keyframes_idx, title="stage3", plot_dir=self.stage3_dir, plot=False, save=self.save)
         
         # plot before and after optimization errors
         tmp_d = {'errors_before':self.errors_before, 'errors_after':self.errors_after}
-        my_plot.plotly_scatters(tmp_d, x=self.keyframes_idx[1:], title="errors_before_after_stage3", plot_dir=self.stage3_dir, plot=False, save=self.save,
-                               yaxis="error")
+        utils.plot.plotly_scatters(tmp_d, x=self.keyframes_idx[1:], title="errors_before_after_stage3", plot_dir=self.stage3_dir, plot=False, save=self.save,
+                             yaxis="error")
         # my_plot.plt_bundle_errors(self.errors_before, self.errors_after, self.keyframes_idx[1:], "stage3", self.stage3_dir, plot=False)
 
         # serialzie Pose3 and marginals
@@ -170,30 +164,3 @@ def do_single_bundle(frames_idx, ext_li_to_lstart_s, tracks_db, gt_k): # bundelo
         error_after = optimizer.error()
         marginals = gtsam.Marginals(graph, values)
         return values, error_before, error_after, marginals
-
-if __name__=="__main__":
-    ext_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-14-49_0_20/stage2_0.4_0.8/ext_li_to_lj_s_stage2_20.pkl'
-    tracks_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-14-49_0_20/stage2_0.4_0.8/stage2_tracks_20.pkl'
-
-    # ext_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage2_54.9_112.8/ext_li_to_lj_s_stage2_2760.pkl'
-    # tracks_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage2_54.9_112.8/stage2_tracks_2760.pkl'
-    
-    tracks_pkl_path_os = utils.path_to_current_os(tracks_pkl_path)
-    stage2_dir, _, _ = utils.dir_name_ext(tracks_pkl_path_os)
-    out_path = os.path.dirname(stage2_dir)
-    
-    tracks_db = tracks.read(tracks_pkl_path_os)
-    exts = utils.deserialize_ext_li_to_lj_s(ext_path)
-
-    ba = FactorGraphSLAM(exts, tracks_db, out_path)
-    ba.main()
-    print('bundle end')
-
-
-
-# Debugging method
-def find_where_in_graph(graph, num=8070450532252330524, ppoint="p4401692"):
-    for i in range(graph.size()):
-        fact_i = graph.at(i)
-        if num in fact_i.keys():
-            print(fact_i)

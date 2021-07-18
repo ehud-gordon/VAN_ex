@@ -1,14 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import plotly
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from matplotlib import gridspec
 import scipy
 import os, webbrowser
 
-import utils
-from utils import rund, und_title
+from utils.utils import utils_sys, utils_arr
+from utils.utils import und_title, rund
+
 
 ############ MATPLOTLIB ############
 def plt_diff_trans_vecs(trans_diff, plot_dir,title, frames_idx=None, save=True, plot=False):
@@ -203,7 +203,7 @@ class Draw_KP_PC_INLIERS:
         self.fig.canvas.mpl_connect('key_press_event', self.onkeypress)
         plt.suptitle(f"frame={self.i} {title}")
         if save:
-            path = os.path.join(plot_dir, f'plt_kp_pc_inliers_{self.i}{utils.lund(title)}' + '.png')
+            path = os.path.join(plot_dir, f'plt_kp_pc_inliers_{self.i}{utils_sys.lund(title)}' + '.png')
             plt.savefig(path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
@@ -215,17 +215,17 @@ def plotly_save_fig(fig, title="", plot_dir="", save=True, plot=True):
     if save:
         path = os.path.join(plot_dir, title + '.html')
         fig.write_html(path, auto_open=False)
-        json_dir = os.path.join(plot_dir, 'JSON'); utils.make_dir_if_needed(json_dir)
+        json_dir = os.path.join(plot_dir, 'JSON'); utils_sys.make_dir_if_needed(json_dir)
         json_path = os.path.join(json_dir, title +'.JSON')
         fig.write_json(json_path)
-        png_dir = os.path.join(plot_dir,'PNG'); utils.make_dir_if_needed(png_dir)
+        png_dir = os.path.join(plot_dir,'PNG'); utils_sys.make_dir_if_needed(png_dir)
         png_path = os.path.join(png_dir, title + '.png')
         fig.write_image(png_path)
-        if plot: webbrowser.open(utils.path_to_windows(path), new=2)
+        if plot: webbrowser.open(utils_sys.path_to_windows(path), new=2)
     if not save and plot:
-        path = utils.get_avail_path("tmp.html")
+        path = utils_sys.get_avail_path("tmp.html")
         fig.write_html(path, auto_open=False)
-        webbrowser.open(utils.path_to_windows(path), new=2)
+        webbrowser.open(utils_sys.path_to_windows(path), new=2)
 
 def plotly_bar(y, bins=None, title="", plot_dir="", save=True, plot=False):
     if bins is None:
@@ -686,9 +686,9 @@ def plotly_cov_dets(cov_cj_cond_ci_dict, frames_idx, title="", plot_dir="", plot
     plotly_scatters(dct1, x=frames_idx, title=f"det_cond_{title}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)
     
     # cumsum
-    cumsum_cj_on_ci = utils.cumsum_mats(cov_cj_cond_ci_s); 
+    cumsum_cj_on_ci = utils_arr.cumsum_mats(cov_cj_cond_ci_s);
     cumsum_cj_on_ci_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_cj_on_ci]
-    cumsum_ci_on_cj = utils.cumsum_mats(cov_ci_cond_cj_s)
+    cumsum_ci_on_cj = utils_arr.cumsum_mats(cov_ci_cond_cj_s)
     cumsum_ci_on_cj_dets = [np.linalg.det(cov_mat) for cov_mat in cumsum_ci_on_cj]
     dct1 = {'cumsum_lj_cond_li':cumsum_cj_on_ci_dets, 'cumsum_li_cond_lj':cumsum_ci_on_cj_dets}
     plotly_scatters(dct1, x=frames_idx, title=f"det_cumsum_cond_{title}",plot_dir=plot_dir, yaxis="Det of cov matrix", save=save, plot=plot)

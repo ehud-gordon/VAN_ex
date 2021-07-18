@@ -1,12 +1,11 @@
 import numpy as np
 
 import argparse
-import os, sys
-import logging
+import os
 
 import kitti, utils
+from utils import utils_sys
 from drive import Drive
-from tracks_analysis import filter_tracks_db
 
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
@@ -44,10 +43,10 @@ def parse_args():
     # if args.v:
         # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(message)s')
 
-    args.out_path = os.path.join(args.out_dir, utils.get_time_path())
-    args.out_path += utils.lund(args.run_name) + f'_{args.startframe}_{args.endframe}'
+    args.out_path = os.path.join(args.out_dir, utils_sys.get_time_path())
+    args.out_path += utils_sys.lund(args.run_name) + f'_{args.startframe}_{args.endframe}'
     if args.store_tracks or args.save or args.plot:
-        utils.clear_and_make_dir(args.out_path)
+        utils_sys.clear_and_make_dir(args.out_path)
 
 
     return args
@@ -55,7 +54,8 @@ if __name__=="__main__":
     args = parse_args()
     drive = Drive(args=args)
     s2_ext_li_to_lj_s, s2_tracks_db = drive.main() # stage 2
-    import bundle
+    from gtsam import bundle
+
     ba = bundle.FactorGraphSLAM(s2_ext_li_to_lj_s, s2_tracks_db, args.out_path)
     ba.main()
     print('end')

@@ -3,6 +3,8 @@ import os
 import numpy as np
 import re
 import glob
+
+from utils import utils_img
 import utils
 np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
@@ -109,7 +111,7 @@ def read_poses_cam_to_world(idx=None, dataset_path=None):
 def read_ln_to_li(i, n, dataset_path=None):
     li_to_l0 = read_poses_cam_to_world([i], dataset_path)[0]
     ln_to_l0 = read_poses_cam_to_world([n], dataset_path)[0]
-    ln_to_li = utils.B_to_A_mat(li_to_l0, ln_to_l0)
+    ln_to_li = utils_img.B_to_A_mat(li_to_l0, ln_to_l0)
     return ln_to_li
 
 def read_dws(idx=None, dataset_path=None):
@@ -125,7 +127,7 @@ def read_dws(idx=None, dataset_path=None):
 
 def read_poses_world_to_cam(idx=None, dataset_path=None):
     matrices = read_poses_cam_to_world(idx=idx, dataset_path=dataset_path)
-    matrices = [utils.inv_extrinsics(m) for m in matrices]
+    matrices = [utils_img.inv_extrinsics(m) for m in matrices]
     return matrices
 
 def read_relative_poses_world_to_cam(idx=None, dataset_path=None):

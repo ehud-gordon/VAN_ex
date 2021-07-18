@@ -1,7 +1,8 @@
 import numpy as np
 import cv2
 
-import utils
+from utils.utils import utils_img
+
 
 def pnp(k, pc, kp, size):
     """
@@ -25,7 +26,7 @@ def pnp(k, pc, kp, size):
             exception_raised = True
     if (retval is False) or exception_raised:
         return None
-    ext_world_to_cam = utils.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) from WORLD (left_0) to CAMERA (left_j)
+    ext_world_to_cam = utils_img.rodrigues_to_mat(rvec, tvec)  # extrinsic (4,4) from WORLD (left_0) to CAMERA (left_j)
     return ext_world_to_cam
 
 def pnp_ransac(kp_l, kp_r, pc, k, ext_l_to_r, frame="", max_iters=np.inf):
@@ -44,8 +45,8 @@ def pnp_ransac(kp_l, kp_r, pc, k, ext_l_to_r, frame="", max_iters=np.inf):
     while iters_done <= min(iters_to_do, max_iters):
         ext_w_to_c = pnp(k, pc, kp_l, size=4)
         if ext_w_to_c is None: continue
-        inliers_bool, proj_errors_l, proj_errors_r = utils.get_consistent_with_extrinsic(kp_l, kp_r, pc,
-                                                                                ext_w_to_c, ext_l_to_r, k)
+        inliers_bool, proj_errors_l, proj_errors_r = utils_img.get_consistent_with_extrinsic(kp_l, kp_r, pc,
+                                                                                             ext_w_to_c, ext_l_to_r, k)
         inlier_perc = sum(inliers_bool) / kp_l.shape[1]
         eps = min(eps,1-inlier_perc) # get upper bound on percent of outliers
         iters_done += 1
@@ -69,10 +70,10 @@ def pnp_ransac(kp_l, kp_r, pc, k, ext_l_to_r, frame="", max_iters=np.inf):
         print(f'frame={frame}, error in pnp_ransac() when refining, before: {num_inliers_before_ref}/{num_points}={perc_inliers_before_ref}')
         return best_ext_w_to_c, best_inliers_bool, best_proj_errors_l, best_proj_errors_r
     
-    rot_diff, trans_diff = utils.compare_ext_mat(ext_w_to_c_ref, best_ext_w_to_c) # rot in degrees
-    inliers_bool_ref, proj_errors_l_ref, proj_errors_r_ref = utils.get_consistent_with_extrinsic(kp_l, kp_r,
-                                                                                    pc, ext_w_to_c_ref,
-                                                                                    ext_l_to_r, k)
+    rot_diff, trans_diff = utils_img.compare_ext_mat(ext_w_to_c_ref, best_ext_w_to_c) # rot in degrees
+    inliers_bool_ref, proj_errors_l_ref, proj_errors_r_ref = utils_img.get_consistent_with_extrinsic(kp_l, kp_r,
+                                                                                                     pc, ext_w_to_c_ref,
+                                                                                                     ext_l_to_r, k)
     num_inliers_after_ref = sum(inliers_bool_ref); perc_after_ref = f'{num_inliers_after_ref/num_points:.1%}'
 
     # this is a strange bug where retval==True, but the resulting ext is wildly incorrect

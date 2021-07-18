@@ -1,9 +1,8 @@
 import numpy as np
 from numpy import pi
 import gtsam
-from gtsam import Pose3
+from gtsam import Pose3, bundle, utils as g_utils, pose_graph
 from gtsam.symbol_shorthand import X
-from plotly import graph_objects
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import dijkstra
 
@@ -11,12 +10,15 @@ import os, time
 import copy
 from itertools import compress
 from collections import defaultdict
-import warnings; warnings.filterwarnings("ignore")
-from operator import itemgetter
+import warnings;
 
-import kitti, tracks, utils, my_plot, results, features, bundle, pnp, pose_graph
-import shortest_path
-import gtsam_utils as g_utils
+from utils import utils_sys, shortest_path, utils_img
+
+warnings.filterwarnings("ignore")
+
+import kitti, tracks, results, features
+from plot import my_plot
+from calib3d import pnp
 
 MAHAL_THRESH = 0.05 # when to check for inliers
 INLIERS_PERC_LC_THRESH = 0.6
@@ -24,11 +26,11 @@ INLIERS_PERC_LC_THRESH = 0.6
 class LoopClosure:
     def __init__(self, pkl_path):
         # Folders
-        self.stage3_pkl_path = utils.path_to_current_os(pkl_path)
-        self.stage3_dir, _, _ = utils.dir_name_ext(self.stage3_pkl_path)
+        self.stage3_pkl_path = utils_sys.path_to_current_os(pkl_path)
+        self.stage3_dir, _, _ = utils_sys.dir_name_ext(self.stage3_pkl_path)
         self.out_path = os.path.dirname(self.stage3_dir)
         self.stage5_dir = os.path.join(self.out_path, 'stage5')
-        utils.clear_and_make_dir(self.stage5_dir)
+        utils_sys.clear_and_make_dir(self.stage5_dir)
         self.num_of_lc = 0
         self.lc_msg = 'lc_0'
         # init kitti
@@ -36,8 +38,8 @@ class LoopClosure:
         s3_Pose3_lj_to_li_list, self.s3_cov_ln_cond_li_dict, self.keyframes_idx = g_utils.deserialize_bundle(self.stage3_pkl_path, as_ext=False) # [0,10,20,...,2760], 277
         self.num_frames = len(self.keyframes_idx)
         s3_ext_lj_to_li_s = [pose.matrix() for pose in s3_Pose3_lj_to_li_list]
-        self.s3_ext_li_to_l0_s = utils.concat_cj_to_ci_s(s3_ext_lj_to_li_s)
-        self.s3_dws = utils.get_dws_from_cam_to_world_s(self.s3_ext_li_to_l0_s)
+        self.s3_ext_li_to_l0_s = utils_img.concat_cj_to_ci_s(s3_ext_lj_to_li_s)
+        self.s3_dws = utils_img.get_dws_from_cam_to_world_s(self.s3_ext_li_to_l0_s)
         self.marg_covs = []
         self.cov_li_cond_l0_s = []
         # kitti
@@ -77,10 +79,10 @@ class LoopClosure:
         pnp_ext_ln_to_li, pnp_inliers_bool, _, _ = pnp.pnp_ransac(kp_li_m, kp_ri_m, pc_n_m, self.k, self.ext_l_to_r, max_iters=15, frame=f'{n_kf}, {i_kf}')
         pnp_perc_inliers = sum(pnp_inliers_bool) / len(matches_li_ln)
         kitti_ln_to_li = kitti.read_ln_to_li(i_kf, n_kf)
-        rot_pnp_kitti, trans_pnp_kitti = utils.compare_ext_mat(pnp_ext_ln_to_li ,kitti_ln_to_li)
+        rot_pnp_kitti, trans_pnp_kitti = utils_img.compare_ext_mat(pnp_ext_ln_to_li, kitti_ln_to_li)
         # compare extrinsics
         prev_ext_ln_to_li = prev_Pose3_ln_to_li.matrix()
-        rot_prev_kitti, trans_prev_kitti = utils.compare_ext_mat(prev_ext_ln_to_li, kitti_ln_to_li)
+        rot_prev_kitti, trans_prev_kitti = utils_img.compare_ext_mat(prev_ext_ln_to_li, kitti_ln_to_li)
         added_edge = False
         if pnp_perc_inliers >= INLIERS_PERC_LC_THRESH and do_lc: # add edge
             msg = f'adding edge between {i_kf}, {n_kf}'
@@ -114,8 +116,8 @@ class LoopClosure:
             # compare extrinsics
             after_bundle_ext_ln_to_li = Pose3_ln_to_li.matrix()
 
-            rot_after_bund_kitti, trans_after_bund_kitti = utils.compare_ext_mat(after_bundle_ext_ln_to_li, kitti_ln_to_li); rot_prev_pnp, trans_prev_pnp = utils.compare_ext_mat(prev_ext_ln_to_li, pnp_ext_ln_to_li)
-            rot_pnp_after_bund, trans_pnp_after_bund = utils.compare_ext_mat(pnp_ext_ln_to_li, after_bundle_ext_ln_to_li); rot_prev_after_bund, trans_prev_after_bund = utils.compare_ext_mat(prev_ext_ln_to_li, after_bundle_ext_ln_to_li)
+            rot_after_bund_kitti, trans_after_bund_kitti = utils_img.compare_ext_mat(after_bundle_ext_ln_to_li, kitti_ln_to_li); rot_prev_pnp, trans_prev_pnp = utils_img.compare_ext_mat(prev_ext_ln_to_li, pnp_ext_ln_to_li)
+            rot_pnp_after_bund, trans_pnp_after_bund = utils_img.compare_ext_mat(pnp_ext_ln_to_li, after_bundle_ext_ln_to_li); rot_prev_after_bund, trans_prev_after_bund = utils_img.compare_ext_mat(prev_ext_ln_to_li, after_bundle_ext_ln_to_li)
             print(f'prev_kitti:  rot = {rot_prev_kitti:.2f} deg, trans = {trans_prev_kitti:.2f} m'); print(f'bund_kitti:  rot = {rot_after_bund_kitti:.2f} deg, trans = {trans_after_bund_kitti:.2f} m')
             print(f'prev_pnp:    rot = {rot_prev_pnp:.2f} deg, trans = {trans_prev_pnp:.2f} m'); print(f'pnp_kitti:   rot = {rot_pnp_kitti:.2f} deg, trans = {trans_pnp_kitti:.2f} m')
             print(f'pnp_bundle:  rot = {rot_pnp_after_bund:.2f} deg, trans = {trans_pnp_after_bund:.2f} m'); print(f'prev_bundle: rot = {rot_prev_after_bund:.2f} deg, trans = {trans_prev_after_bund:.2f} m'); print()
@@ -183,7 +185,7 @@ class LoopClosure:
                 # DO LOOP CLOSURE
                 self.num_of_lc += 1
                 self.cur_lc_dir = os.path.join(self.out_path, f'stage5_{self.num_of_lc}')
-                utils.make_dir_if_needed(self.cur_lc_dir)
+                utils_sys.make_dir_if_needed(self.cur_lc_dir)
                 # update table
                 msg = f'doing LC on frame={n_kf} with edges {lc_edges_idx}'
                 self.lc_msg = f'lc_{self.num_of_lc}_frame_{n_kf}_with_edges_{lc_edges_idx}'
@@ -275,13 +277,13 @@ class LoopClosure:
         for n in range(1, num_frames): # [1,...,276]
             # find ln_to_l0_s
             Pose3_ln_to_l0, cov_ln_cond_l0, simp_path = shortest_path.Pose3_and_cov_ln_to_li_from_pred(0, n, self.from_to_Pose3_dict, self.cov_ln_cond_li_dict,
-                                                        pred_to_n[n])
+                                                                                                       pred_to_n[n])
             dijk_ext_li_to_l0_s.append(Pose3_ln_to_l0.matrix())
             dijk_cov_li_on_l0_s.append(cov_ln_cond_l0)
             dijk_det_li_on_l0_s.append(np.linalg.det(cov_ln_cond_l0))
             num_steps_to_zero.append(len(simp_path)-1 )
 
-        dijk_dws = utils.get_dws_from_cam_to_world_s(dijk_ext_li_to_l0_s)
+        dijk_dws = utils_img.get_dws_from_cam_to_world_s(dijk_ext_li_to_l0_s)
         dijk_sd = (dijk_dws, f'dijk_dws_{self.num_of_lc}', 'rgb(255,7,137)')
         my_plot.plotly_scatter(x=self.keyframes_idx, y=dijk_det_li_on_l0_s, yaxis='det of cov', plot_dir=self.cur_lc_dir,
                                title=f"dijk_det_cov_li_cond_on_l0_s_{title}", save=True, plot=False)
@@ -296,7 +298,7 @@ class LoopClosure:
     def output_results(self):
         # Create new stage5 folder
         self.cur_lc_dir = os.path.join(self.out_path, f'stage5_{self.num_of_lc}')
-        utils.make_dir_if_needed(self.cur_lc_dir)
+        utils_sys.make_dir_if_needed(self.cur_lc_dir)
         # serialzie stage 5            
         g_utils.serialize_stage5(self.cur_lc_dir, self.from_to_Pose3_dict, self.cov_ln_cond_li_dict, self.det_ln_cond_li_arr,
                                  self.marg_covs, self.cov_li_cond_l0_s, self.keyframes_idx, title=f'stage5_{self.num_of_lc}')
@@ -309,15 +311,15 @@ class LoopClosure:
         ext_li_to_l0_s, cov_li_on_l0_s, det_li_on_l0_s, det_dists_ln_cond_li, pred_to_n = \
                      self.compute_ext_cov_li_to_l0_s_from_dijk(f"after_optimize_and_update_{self.lc_msg}")
 
-        new_dws = utils.get_dws_from_cam_to_world_s(ext_li_to_l0_s)
-        new_sd = (new_dws, f'after LC {self.num_of_lc}', utils.get_color(self.num_of_lc))
+        new_dws = utils_img.get_dws_from_cam_to_world_s(ext_li_to_l0_s)
+        new_sd = (new_dws, f'after LC {self.num_of_lc}', utils_img.get_color(self.num_of_lc))
         self.sd_list.append(new_sd)
 
         rots_total_error_abs, trans_total_error_abs = results.output_results(self.out_path, ext_li_to_l0_s, self.keyframes_idx, f"stage_5_{self.num_of_lc}",
                                                      self.start_time, save=self.save, plot=False)
         # Rename stage5 folder
         new_stage5_dir = os.path.join(self.out_path, f'stage5_{self.num_of_lc}_{rots_total_error_abs:.1f}_{trans_total_error_abs:.1f}')
-        utils.clear_and_make_dir(new_stage5_dir)
+        utils_sys.clear_and_make_dir(new_stage5_dir)
         os.rename(self.cur_lc_dir, new_stage5_dir)
         self.cur_lc_dir = new_stage5_dir
 
@@ -332,7 +334,7 @@ class LoopClosure:
         if self.errors_before and self.errors_after:
                 err_dict = {'before':self.errors_before, 'after':self.errors_after}
                 x = list(range(1,len(self.errors_before)+1))
-                my_plot.plotly_scatters(err_dict,x=x, title="stage5_pose_graph_errors", plot_dir=self.stage5_dir, yaxis="error", xaxis="LC num", save=True, plot=False)
+                my_plot.plotly_scatters(err_dict, x=x, title="stage5_pose_graph_errors", plot_dir=self.stage5_dir, yaxis="error", xaxis="LC num", save=True, plot=False)
 
 if __name__=="__main__":
     stg3_pkl_path = r'/mnt/c/users/godin/Documents/VAN_ex/out/07-10-13-49_0_2760/stage3_40.8_29.9/stage3_ext_lj_to_li_s_cond_covs_2760.pkl'

@@ -4,8 +4,12 @@ import os
 import time
 from itertools import compress
 
-import kitti, features, triang, tracks, utils
-import my_plot, results, pnp
+from utils import utils_img
+import kitti, features, tracks, utils
+import results
+from plot import my_plot
+from calib3d import pnp, triang
+
 
 class Drive:
 
@@ -39,7 +43,7 @@ class Drive:
             # get ext_l0_lj with pnp
             pc_i_in_li_matched, kp_lj_matched, kp_rj_matched = features.filter_with_matches(matches_li_lj, [pc_lr_i_in_li], [kp_lj, kp_rj])
             ext_li_to_lj, ext_inliers_bool, proj_errors_lj, proj_errors_rj = pnp.pnp_ransac(kp_lj_matched, kp_rj_matched,
-                                                                                            pc_i_in_li_matched, self.k, self.ext_l_to_r,j)  # (4,4), (len(matches))
+                                                                                            pc_i_in_li_matched, self.k, self.ext_l_to_r, j)  # (4,4), (len(matches))
             ext_li_to_lj_s.append(ext_li_to_lj)
             pnp_inliers_matches_li_lj = list(compress(matches_li_lj, ext_inliers_bool))
             
@@ -69,7 +73,7 @@ class Drive:
             self.stage2_tracks_path = tracks_db.serialize(args.stage2_dir, f'stage2_tracks_{args.endframe}')
         utils.serialize_ext_li_to_lj_s(args.stage2_dir, ext_li_to_lj_s, title=f'stage2_{args.endframe}')
 
-        ext_li_to_l0_s = utils.concat_and_inv_ci_to_cj_s(ext_li_to_lj_s)
+        ext_li_to_l0_s = utils_img.concat_and_inv_ci_to_cj_s(ext_li_to_lj_s)
         # output important plots and stats
         rots_total_error, trans_total_error = results.output_results(args.out_path, ext_li_to_l0_s, args.frames_idx, "stage_2",
                                                                      start_time, plot=args.plot, save=args.save)
@@ -86,7 +90,7 @@ class Drive:
         inliers_frac_out_of_matches = np.mean(kp_lj_inlier_matches[1] / kp_lj_inlier_matches[2])
         tmp_d = {'kp_lj':kp_lj_inlier_matches[0], 'li_lj_matches':kp_lj_inlier_matches[2], 'pnp_inliers':kp_lj_inlier_matches[1]}
         tmp_title = f"count_kp_left1_matches_inliers_{args.startframe}_{args.endframe}"
-        my_plot.plotly_scatters(tmp_d, x=args.frames_idx[1:], title=tmp_title,plot_dir=args.stage2_dir, plot=args.plot, save=args.save, yaxis="count")
+        my_plot.plotly_scatters(tmp_d, x=args.frames_idx[1:], title=tmp_title, plot_dir=args.stage2_dir, plot=args.plot, save=args.save, yaxis="count")
         stats.append(f'avg. number of detected keypoints: {avg_num_of_keypoints:.0f}', 
                      f'avg. percent of matched out of keypoints {matches_frac_out_of_keypoints:.0%}',
                      f'avg. percent of inliers out of matches {inliers_frac_out_of_matches:.0%}'

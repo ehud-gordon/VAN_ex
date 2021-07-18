@@ -3,7 +3,11 @@ import numpy as np
 import os
 import pickle
 
-import kitti, my_plot, tracks, utils, triang, features
+import kitti
+import utils.geometry
+from calib3d import triangulate
+import utils
+
 TRACKS_PATH = r'C:\Users\godin\Documents\VAN_ex\tracks'
 BITS_TRACKS_PER_IMG = 11
 
@@ -109,7 +113,7 @@ class Tracks_DB:
         d['td'] = self.td
         d['frames_idx'] = self.frames_idx
         pkl_path = os.path.join(dir_path, f'{title}.pkl')
-        utils.clear_path(pkl_path)
+        utils.sys.clear_path(pkl_path)
         with open(pkl_path, 'wb') as handle:
             pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
         return pkl_path
@@ -129,7 +133,7 @@ def read(tracks_pkl_path):
         return tracks_db
 
 def re_serialize(pkl_path):
-    pkl_dir, name, ext = utils.dir_name_ext(pkl_path)
+    pkl_dir, name, ext = utils.sys.dir_name_ext(pkl_path)
     print(pkl_dir, name, ext)
     with open(pkl_path, 'rb') as handle:
         d = pickle.load(handle)
@@ -138,15 +142,6 @@ def re_serialize(pkl_path):
     with open(pkl_path, 'wb') as handle:
         pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-def my_output_results(out_path, ext_l0_to_li_s):
-    frames_idx = list(range(0, 501))
-    ext_li_to_l0_s = utils.inv_extrinsics_mult(ext_l0_to_li_s)
-    import results
-    # output important plots and stats
-    rots_total_error, trans_total_error = results.output_results(out_path, ext_li_to_l0_s, frames_idx, "stage2", 0, plot=True, save=True)
-    # create folder
-    stage2_dir =  os.path.join(out_path, 'stage2' + f'_{trans_total_error:.1f}_{rots_total_error:.1f}')
-    utils.make_dir_if_needed(stage2_dir)
 
 def visualize_tracks_frame(tracks_pkl_path, i):
     tracks_db = read(tracks_pkl_path)
@@ -161,34 +156,11 @@ def visualize_tracks_frame(tracks_pkl_path, i):
     kp_r = np.array(kp_r).T
     pc_in_l0 = np.array(pc_in_l0).T
     img_li, img_ri = kitti.read_images(i)
-    my_plot.plotly_kp_pc_inliers(img_li, img_ri, kp_l, kp_r, pc_in_l0, np.ones(pc_in_l0.shape[1], dtype=bool), title=f"tracks_vis_L0_CS_f={i}",save=False, plot=True)
+    utils.plot.plotly_kp_pc_inliers(img_li, img_ri, kp_l, kp_r, pc_in_l0, np.ones(pc_in_l0.shape[1], dtype=bool), title=f"tracks_vis_L0_CS_f={i}", save=False, plot=True)
     ext_l0_to_li = tracks_db.ext_l0_to_li_s[i]
-    ext_li_to_l0 = utils.inv_extrinsics(ext_l0_to_li)
+    ext_li_to_l0 = utils.geometry.inv_extrinsics(ext_l0_to_li)
     k, ext_id, ext_l_to_r = kitti.read_cameras()
-    pc_in_li = triang.triang(kp_l,kp_r, k, ext_id, ext_l_to_r)
-    import time; time.sleep(3)
-    my_plot.plotly_kp_pc_inliers(img_li, img_ri, kp_l, kp_r, pc_in_li, np.ones(pc_in_li.shape[1], dtype=bool), title=f"tracks_vis_Li_CS_f={i}",save=False, plot=True)
-    # draw = features.DrawMatchesDouble(img_li, img_ri, kp_l, kp_r, pc=pc_in_li, i=i)
-    # draw.draw_matches_double()
+    pc_in_li = triangulate.triangulate(kp_l, kp_r, k, ext_id, ext_l_to_r)
     pc_in_li_to_l0 = np.vstack((pc_in_li, np.ones(pc_in_li.shape[1])))
     pc_in_li_to_l0 = ext_li_to_l0[:3] @ pc_in_li_to_l0
-    import time; time.sleep(3)
-    my_plot.plotly_kp_pc_inliers(img_li, img_ri, kp_l, kp_r, pc_in_li_to_l0, np.ones(pc_in_li.shape[1], dtype=bool),title=f"tracks_vis_in_Li_to_l0_CS_f={i}", save=False, plot=True)
-    a = 3
-
-
-
-
-
-if __name__=="__main__":
-    i, m_id = track_id_to_cam_match_idx(4508351)
-    print(i, m_id)
-
-    tracks_pkl_path = r'C:\Users\godin\Documents\VAN_ex\out\07-05-15-43_relq_forest_099_011_global_2760\stage2_58.7_120.1\stage2_tracks_2760_filtered.pkl'
-    tracks_db = read(tracks_pkl_path)
-    i=2201
-    visualize_tracks_frame(tracks_pkl_path, i)
-    a=3
-
-    print('finished')
 

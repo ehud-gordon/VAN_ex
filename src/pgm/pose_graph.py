@@ -1,9 +1,9 @@
 import numpy as np
-from numpy import pi as pi
+from numpy import pi
 import gtsam
-from gtsam import Pose3
+from gtsam import Pose3, utils as g_utils
 from gtsam.symbol_shorthand import X
-import gtsam_utils as g_utils
+
 from collections import defaultdict
 
 

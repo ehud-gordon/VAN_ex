@@ -1,6 +1,6 @@
 import gtsam
+import utils.geometry
 from gtsam import KeyVector, Pose3
-from gtsam.symbol_shorthand import X
 from gtsam.utils import plot as g_plot
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,10 +9,9 @@ from collections import defaultdict
 from gtsam.symbol_shorthand import X
 import os, pickle
 
-import utils, my_plot
-from utils import und_title
+import src.utils
+from src.utils.sys import und_title
 
-np.set_printoptions(edgeitems=30, linewidth=100000, suppress=True, formatter=dict(float=lambda x: "%.5g" % x))
 
 #### GEOMETRY ####
 def dws_from_Pose3_c_to_w_s(Pose3_cam_to_world_values):
@@ -48,7 +47,7 @@ def Pose3_values_from_exts(exts, frames_idx):
 def t2v(pose3):
     rot_mat = pose3.rotation().matrix()    
     trans = pose3.translation()
-    return utils.t2v(rot_mat, trans)
+    return src.utils.geometry.t2v(rot_mat, trans)
 
 def comp_mahal_dist(Pose3_cn_to_ci, cov_cn_cond_ci):
     t2v_n_to_i = t2v(Pose3_cn_to_ci)
@@ -58,7 +57,7 @@ def comp_mahal_dist(Pose3_cn_to_ci, cov_cn_cond_ci):
 def rot_trans_norm_from_Pose3(pose):
     rot = pose.rotation().matrix()
     trans = pose.translation()
-    return utils.rot_trans_norm(rot, trans)
+    return src.utils.geometry.rot_trans_norm(rot, trans)
 
 def get_gt_k(k, ext_l_to_r):
     fx, skew, cx, _, fy, cy = k[0:2, 0:3].flatten()
@@ -78,10 +77,10 @@ def extract_to_c0_from_to_dict(from_to_dict, keyframes_idx, as_ext=True):
         cj_to_ci_list.append(from_to_dict[j][j-1])
     
     if type(cj_to_ci_list[0]).__module__ == np.__name__:
-        ext_ci_to_c0_s = utils.concat_cj_to_ci_s(cj_to_ci_list)
+        ext_ci_to_c0_s = src.utils.geometry.concat_cj_to_ci_s(cj_to_ci_list)
     else:
         ext_cj_to_ci_s = [pose.matrix() for pose in cj_to_ci_list]
-        ext_ci_to_c0_s = utils.concat_cj_to_ci_s(ext_cj_to_ci_s)
+        ext_ci_to_c0_s = src.utils.geometry.concat_cj_to_ci_s(ext_cj_to_ci_s)
     if as_ext:
         return ext_ci_to_c0_s
     else:
@@ -191,7 +190,7 @@ def deserialize_stage5(pkl_path, as_ext=False, concat=False):
     if concat: 
         ext_lj_to_li_s =[new_from_to_ext_dict[0][0]]
         ext_lj_to_li_s += [ new_from_to_ext_dict[j][j-1] for j in range(1,len(keyframes_idx))]
-        ext_li_to_l0_s = utils.concat_cj_to_ci_s(ext_lj_to_li_s)
+        ext_li_to_l0_s = src.utils.geometry.concat_cj_to_ci_s(ext_lj_to_li_s)
         return ext_li_to_l0_s, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
     if as_ext:
         return new_from_to_ext_dict, cov_ln_cond_li_dict, det_ln_cond_li_arr, marg_covs, cov_li_cond_l0_s, keyframes_idx
@@ -202,17 +201,8 @@ def deserialize_stage5(pkl_path, as_ext=False, concat=False):
 def single_bundle_plots(Pose3_c_to_w_s_points, plot_dir, startframe, endframe, marginals=None):
     # plot 2D view cameras+points
     plot_2d_cams_points_from_gtsam_values(Pose3_c_to_w_s_points, plot_dir, endframe, startframe)
-    
-    # plot 3D trajectory only cameras
-    gtsam.utils.plot.plot_trajectory(startframe, Pose3_c_to_w_s_points)
-    gtsam.utils.plot.set_axes_equal(startframe)
-    plt.savefig(os.path.join(plot_dir, f'3d_cams_{startframe}_{endframe}'), bbox_inches='tight', pad_inches=0)
 
     # plot 3D trajectory cameras+points
-    gtsam.utils.plot.plot_trajectory(startframe+1, Pose3_c_to_w_s_points)
-    gtsam.utils.plot.plot_3d_points(startframe+1, Pose3_c_to_w_s_points, linespec='r*')
-    gtsam.utils.plot.set_axes_equal(startframe+1)
-    plt.savefig(os.path.join(plot_dir, f'3d_cams_points_{startframe}_{endframe}'), bbox_inches='tight', pad_inches=0)
     if marginals is not None:
         my_cond_plot_trajectory(startframe + 2, Pose3_c_to_w_s_points, marginals, startframe, endframe,
                                         plot_dir)
@@ -236,7 +226,7 @@ def get_ellipse_trace(ext_cam_to_world, P, name=""):
     :param P: (6,6) covariance matrix of this pose
     This code is copied from gtsam.utils.plot.
     """
-    gRp, origin = utils.get_r_t(ext_cam_to_world)
+    gRp, origin = utils.geometry.get_rot_trans(ext_cam_to_world)
     pPp = P[3:6, 3:6]
     gPp = gRp @ pPp @ gRp.T
     k = 11.82
@@ -260,7 +250,7 @@ def get_ellipse_trace(ext_cam_to_world, P, name=""):
     return ellipse_trace
 
 def plotly_cond_trajectory2(ext_ci_to_c0_s, cumsum_cov_cj_cond_ci, name, frames_idx, title="", plot_dir="", save=True, plot=False):
-    dws= utils.get_dws_from_cam_to_world_s(ext_ci_to_c0_s)
+    dws= utils.geometry.get_dws_from_cam_to_world_s(ext_ci_to_c0_s)
     num_frames = dws.shape[1] # 11
     startframe = frames_idx[0]
     frames_idx = np.array(frames_idx) if frames_idx is not None else np.arange(0,num_frames)  # [0-10]
@@ -287,13 +277,13 @@ def plotly_cond_trajectory2(ext_ci_to_c0_s, cumsum_cov_cj_cond_ci, name, frames_
     title1 = f"left camera location {title}"
     fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
     fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='data')); fig.update_scenes(zaxis_autorange="reversed")
-    my_plot.plotly_save_fig(fig, f'cond_traj_plotly_data_{title}', plot_dir, save, plot)
+    src.utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_data_{title}', plot_dir, save, plot)
     fig.update_layout(scene=dict(aspectmode='cube'))
-    my_plot.plotly_save_fig(fig, f'cond_traj_plotly_cube_{title}', plot_dir, save, plot)
+    src.utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_cube_{title}', plot_dir, save, plot)
 
 def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, name, frames_idx, title="", plot_dir="", save=True, plot=False):
     ext_c_to_w_s = [pose.matrix() for pose in Pose3_c_to_w_list]
-    dws= utils.get_dws_from_cam_to_world_s(ext_c_to_w_s)
+    dws= utils.geometry.get_dws_from_cam_to_world_s(ext_c_to_w_s)
     num_frames = dws.shape[1] # 11
     startframe = frames_idx[0]
     frames_idx = np.array(frames_idx) if frames_idx is not None else np.arange(0,num_frames)  # [0-10]
@@ -325,7 +315,7 @@ def plotly_cond_trajectory(Pose3_c_to_w_list, marginals, cumsum_cov_cj_cond_ci, 
     fig.update_layout(title_text=title1,  title_x=0.5, font=dict(size=14))
     # fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Y', zaxis_title='Z', aspectmode='cube'))
     fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Z', zaxis_title='Y', aspectmode='cube')); fig.update_scenes(zaxis_autorange="reversed")
-    my_plot.plotly_save_fig(fig, f'cond_traj_plotly_{title}', plot_dir, save, plot)
+    src.utils.plot.plotly_save_fig(fig, f'cond_traj_plotly_{title}', plot_dir, save, plot)
 
 def plt_plot_cov_trajectory(fignum, Pose3_c_to_w_list, cov_list, frames_idx, title="", plot_dir="", save=True, plot=False):
     fig = plt.figure(fignum)
