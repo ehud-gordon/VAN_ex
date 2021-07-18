@@ -13,7 +13,7 @@ import utils.array
 
 ############ UTILS ############
 def get_color(i):
-    c = ['black','blue', 'orange', 'purple', 'gold' ,'limegreen', 'cyan','brown','silver', 'indigo', 'tomato', 'seashell', 'rosybrown', 'plum']
+    c = ['black','blue', 'orange', 'purple', 'gold' ,'limegreen', 'cyan','brown','silver', 'indigo', 'tomato', 'rosybrown', 'plum']
     return c[i % len(c)]
 
 ############ MATPLOTLIB ############
