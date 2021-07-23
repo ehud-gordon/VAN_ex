@@ -1,8 +1,11 @@
+""" Utility functions to read kitti images and matrices """
 import cv2
 import os
 import numpy as np
 import re
 import glob
+import utils.geometry
+from core.pose_vector import PoseVector
 
 def data_path():
     cwd = os.getcwd()
@@ -20,7 +23,8 @@ def get_seq_length(dataset_path=None):
     return seq_length
 
 def read_images(idx, dataset_path=None, color_mode=cv2.IMREAD_GRAYSCALE):
-    """
+    """ read a pair of stereo iamges in dataset_path
+
     :param color_mode: IMREAD_GRAYSCALE or IMREAD_COLOR
     :return: two images in BGR
     """
@@ -31,18 +35,6 @@ def read_images(idx, dataset_path=None, color_mode=cv2.IMREAD_GRAYSCALE):
     img1 = cv2.imread(os.path.join(images_path, 'image_0', img_name), color_mode)  # left image
     img2 = cv2.imread(os.path.join(images_path, 'image_1', img_name), color_mode)  # right image
     return img1, img2
-
-def get_images_path_from_dataset_path(dataset_path):
-    base = os.path.basename(dataset_path) # dataset05
-    seq_num = re.search(r"[0-9]+", base).group(0) # 05
-    images_path = os.path.join(dataset_path, 'sequences', str(seq_num))
-    return images_path
-
-def get_poses_path_from_dataset_path(dataset_path):
-    base = os.path.basename(dataset_path) # dataset05
-    seq_num = str(re.search(r"[0-9]+", base).group(0)) # 05
-    poses_path = os.path.join(dataset_path, 'poses', seq_num+'.txt')
-    return poses_path
 
 def read_cameras(dataset_path=None):
     """:return: k - (3,3) intrinsics camera matrix (shared by both stereo cameras).
@@ -67,11 +59,10 @@ def read_cameras(dataset_path=None):
     return k, m1, m2
 
 def read_poses_cam_to_world(idx=None, dataset_path=None):
-    """ read original poses.
-    returns extrinsics camera matrices [R|t], with this being
-    from CAMERA to WORLD.
-    :param idx: list of lines to take
-    :return: list of extrinsics matrices [ndarray(4,4), ..., ndarray(4,4)]
+    """ returns extrinsics camera matrices [R|t], from CAMERA to WORLD.
+
+    :param idx: list of lines to take. If None, reads all poses
+    :return: list of (4,4) extrinsics matrices at idx [idx[0]_to_world, ... idx[n]_to_world]
     """
     if idx is not None:
         assert sorted(idx) == idx
@@ -95,16 +86,44 @@ def read_poses_cam_to_world(idx=None, dataset_path=None):
                     matrices.append(m)
                     idx = idx[1:]
                     if not idx:
-                        return matrices
-    return matrices
+                        return PoseVector(matrices)
+    return PoseVector(matrices)
+
+def read_relative_poses_cam_to_world(idx=None, dataset_path=None):
+    """ return kitti relative poses between a list of indices
+
+    :param idx: list of indices. If None returns all
+    :return: if idx=[0,5,7], returns [0_to_0, 5_to_0, 7_to_5]
+    """
+    poses = read_poses_cam_to_world(idx, dataset_path).as_np()
+    relative_poses = [np.diag([1,1,1,1])]
+    pose_i_to_world = poses[0]
+    for pose_j_to_world in poses[1:]:
+        pose_j_to_i = utils.geometry.B_to_A_mat(pose_i_to_world, pose_j_to_world)
+        relative_poses.append(pose_j_to_i)
+    return PoseVector(relative_poses)
 
 def read_dws(idx=None, dataset_path=None):
     """ returns dws from kitti original matrices
     :param idx: list (size n) of lines to read. If none read all
     :return: ndarray (3,n)
     """
-    matrices = read_poses_cam_to_world(idx=idx, dataset_path=dataset_path)
-    dws = []
-    for m in matrices:
-        dws.append(m[0:3,-1])
+    matrices = read_poses_cam_to_world(idx=idx, dataset_path=dataset_path).as_np()
+    dws = [m[0:3,-1] for m in matrices]
     return np.array(dws).T
+
+def get_sd(idx=None, dataset_path=None):
+    dws = read_dws(idx, dataset_path)
+    return (dws, 'kitti', 'green')
+
+def get_images_path_from_dataset_path(dataset_path):
+    base = os.path.basename(dataset_path) # dataset05
+    seq_num = re.search(r"[0-9]+", base).group(0) # 05
+    images_path = os.path.join(dataset_path, 'sequences', str(seq_num))
+    return images_path
+
+def get_poses_path_from_dataset_path(dataset_path):
+    base = os.path.basename(dataset_path) # dataset05
+    seq_num = str(re.search(r"[0-9]+", base).group(0)) # 05
+    poses_path = os.path.join(dataset_path, 'poses', seq_num+'.txt')
+    return poses_path

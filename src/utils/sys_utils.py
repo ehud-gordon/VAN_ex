@@ -1,7 +1,10 @@
+""" Utility functions for system and files """
+
 import os
 import re
 import shutil
 from datetime import datetime
+import pickle
 
 def dir_name_ext(path):
     folder, base = os.path.split(path)
@@ -89,3 +92,12 @@ def out_dir():
 
 def sort_dict_keys(dict):
     return sorted(dict.keys())
+
+def deserialize_pickle(pkl_path):
+    with open(pkl_path, 'rb') as handle:
+        d = pickle.load(handle)
+    return d
+
+def serialize_pickle(d, pkl_path):
+    with open(pkl_path, 'wb') as handle:
+            pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)

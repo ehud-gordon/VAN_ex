@@ -1,15 +1,10 @@
+""" Utility methods for using with arrays """
+
 import numpy as np
 
-
-def cumsum_mats(list_of_mats):
-    cumsum_arr = np.cumsum(list_of_mats, axis=0)
-    cumsum_list = np.split(cumsum_arr, len(list_of_mats), axis=0)
-    cumsum_list = [np.squeeze(mat) for mat in cumsum_list]
-    return cumsum_list
-
-
 def filter_(bool_array, *nd_arrays):
-    """
+    """ filter numpy arrays using a boolean array
+
     :param bool_array: boolean array of size n
     :param nd_arrays: ndarray of size (?,n)
     :return: the filtered arrays
@@ -20,8 +15,8 @@ def filter_(bool_array, *nd_arrays):
 
 
 def get_perc_largest_indices(arr, perc):
-    """
-    find indices of the percent largest element in array
+    """ find indices of the percent largest element in array
+
     :param arr: (n,) ndarray of numbers
     :param perc: number between [0-1], percentage of largest
     :return: boolean array, with True in place of largest perc

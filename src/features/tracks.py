@@ -8,7 +8,6 @@ from typing import Tuple
 
 BITS_TRACKS_PER_IMG = 11 # hack to create great track ids
 
-
 @dataclass
 class StereoTrack:
     """ Track in stereo frames"""
@@ -34,6 +33,9 @@ class StereoTracksDB:
     """ Database for storing tracks between frames of stereo images"""
     def __init__(self):
         self.db = defaultdict(dict) # database
+
+    def __getitem__(self, item):
+        return self.db[item]
 
     def add_frame(self, stereo_features_i, stereo_features_j, matches_i_j):
         """ add a set of tracks to the database. pixels are matched between frames i and j.
@@ -85,6 +87,8 @@ class StereoTracksDB:
                                           track_length=2, cam_id=j, match_id=match_j_id, prev_track=(i, match_i_id))
                 self.db[j][match_j_id] = new_track_j
 
+        return self
+
     def get_tracks(self, frame_idx):
         """ return all tracks from frame i"""
         try:
@@ -100,8 +104,3 @@ def track_id_to_cam_match_idx(track_id):
     cam_id = track_id >> BITS_TRACKS_PER_IMG # 2050 = 1
     match_id = track_id % (1<<BITS_TRACKS_PER_IMG) # 2050 = 2
     return cam_id, match_id
-
-if __name__=="__main__":
-    s = '473734'
-    res = track_id_to_cam_match_idx(int(s))
-    print(res)

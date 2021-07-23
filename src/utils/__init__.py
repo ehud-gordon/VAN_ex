@@ -1,1 +1,1 @@
-__all__ =['array','geometry', 'image', 'plot', 'shortest_path', 'sys','utils']
+__all__ =['array','geometry', 'image', 'plot', 'shortest_path', 'sys_utils']

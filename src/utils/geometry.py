@@ -1,38 +1,43 @@
+""" Utility methods for computer vision geometry """
+
 import cv2
 import numpy as np
 
-
 def rodrigues_to_mat(rvec,tvec):
-    rot, _ = cv2.Rodrigues(src=rvec)
-    extrinsic = np.hstack((rot, tvec))
+    """ create extrinsics matrix from a rotation and a translation vectors.
+
+    :param rvec: (3,) rotation vector
+    :param tvec: (3,) translation vector
+    :return: (4,4) extrinsics matrix
+    """
+    rot = cv2.Rodrigues(src=rvec)[0] # (3,3)
+    extrinsic = np.hstack((rot, tvec)) # (3,4)
     extrinsic = np.vstack((extrinsic, np.array([0,0,0,1])))
     return extrinsic # (4,4)
 
+def transform_pc_to_world(pose_cam_to_world, pc):
+    """ project point cloud (in camera CS) to world CS
 
-def get_dw_from_world_to_cam(ext_mat):
+    :param pose_cam_to_world (4,4) or (3,4) extrinsic matrix
+    :param pc: ndarray (3,n) point-cloud in camera coordinate-system
+    :return: ndarray (3,n) point-cloud in world coordinate-system
     """
-    :param ext_mat: [R|t] extrinsics matrix of some camera
-    :return: dw: (3,1) vector in world coordinates of camera origin
-    """
-    assert ext_mat.shape in [(3,4), (4,4)]
-    r,t = ext_mat[:3,:3], ext_mat[0:3,-1]
-    return r.T @ -t
-
-
-def get_dws_from_world_to_cam_s(world_to_cam_mats):
-    dws = [get_dw_from_world_to_cam(ext_mat) for ext_mat in world_to_cam_mats]
-    return np.array(dws).T
-
+    res = (pose_cam_to_world[:3, :3] @ pc[:3]) + (pose_cam_to_world[:3, -1][:, None])
+    return res
 
 def get_dws_from_cam_to_world_s(cam_to_world_mats):
+    """ extract translation vectors from a set of extrinsics matrices
+
+    :param cam_to_world_mats:  list of size n
+    :return: (3,n) ndarray
+    """
     res = [mat[0:3,3] for mat in cam_to_world_mats]
     return np.array(res).T
 
-
 def inv_extrinsics(ext_mat):
-    """
-    :param ext_mat: [R|t] extrinsics matrix of some camera in global coordinates
-    :return: the [R|T]  matrix of global in camera coordinates, same shape as ext_max
+    """ inverse transformation
+    :param ext_mat: (3,4) or (4,4) extrinsics matrix from CS A to B
+    :return: the matrix (3,4) or (4,4) from CS B to A
     """
     assert ext_mat.shape in [(3, 4), (4, 4)]
     r,t = get_rot_trans(ext_mat)
@@ -47,7 +52,6 @@ def rotation_matrices_diff(R,Q):
     deg_diff = radian_diff * 180 / np.pi
     return deg_diff
 
-
 def compare_ext_mats(ext_mat_1, ext_mat_2):
     rot1, trans1 = get_rot_trans(ext_mat_1)
     rot2, trans2 = get_rot_trans(ext_mat_2)
@@ -55,133 +59,33 @@ def compare_ext_mats(ext_mat_1, ext_mat_2):
     trans_diff = np.linalg.norm(trans1-trans2) # L2 norm
     return rot_diff_in_deg, trans_diff
 
-
-def rot_trans_A_to_B(ext_A_to_0, ext_B_to_0): # between
-    rot_A_to_0, trans_A_to_0 = get_rot_trans(ext_A_to_0)
-    rot_B_to_0, trans_B_to_0 = get_rot_trans(ext_B_to_0)
-    rot_A_to_B = rot_B_to_0.T @ rot_A_to_0
-    trans_A_to_B = rot_B_to_0.T @ (trans_A_to_0 - trans_B_to_0)
+def rot_trans_A_to_B(ext_A_to_world, ext_B_to_world): # between
+    rot_A_to_world, trans_A_to_world = get_rot_trans(ext_A_to_world)
+    rot_B_to_world, trans_B_to_world = get_rot_trans(ext_B_to_world)
+    rot_A_to_B = rot_B_to_world.T @ rot_A_to_world
+    trans_A_to_B = rot_B_to_world.T @ (trans_A_to_world - trans_B_to_world)
     return rot_A_to_B, trans_A_to_B
 
-
-def rot_trans_B_to_A(ext_A_to_0, ext_B_to_0): # between
-    """ this is equivalent to calling rot_trans_A_to_B(ext_B_to_0, ext_A_to_0) """
-    rot_A_to_0, trans_A_to_0 = get_rot_trans(ext_A_to_0)
-    rot_B_to_0, trans_B_to_0 = get_rot_trans(ext_B_to_0)
-    rot_B_to_A = rot_A_to_0.T @ rot_B_to_0
-    trans_B_to_A = rot_A_to_0.T @ (trans_B_to_0 - trans_A_to_0)
+def rot_trans_B_to_A(ext_A_to_world, ext_B_to_world): # between
+    """ this is equivalent to calling rot_trans_A_to_B(ext_B_to_world, ext_A_to_world) """
+    rot_A_to_world, trans_A_to_world = get_rot_trans(ext_A_to_world)
+    rot_B_to_world, trans_B_to_world = get_rot_trans(ext_B_to_world)
+    rot_B_to_A = rot_A_to_world.T @ rot_B_to_world
+    trans_B_to_A = rot_A_to_world.T @ (trans_B_to_world - trans_A_to_world)
     return rot_B_to_A, trans_B_to_A
 
-
-def A_to_B_mat(ext_A_to_0, ext_B_to_0):
-    rot, trans = rot_trans_A_to_B(ext_A_to_0, ext_B_to_0)
+def A_to_B_mat(ext_A_to_world, ext_B_to_world):
+    rot, trans = rot_trans_A_to_B(ext_A_to_world, ext_B_to_world)
     return rot_trans_to_ext(rot, trans)
 
-
-def B_to_A_mat(ext_A_to_0, ext_B_to_0):
-    rot, trans = rot_trans_B_to_A(ext_A_to_0, ext_B_to_0)
+def B_to_A_mat(ext_A_to_world, ext_B_to_world):
+    rot, trans = rot_trans_B_to_A(ext_A_to_world, ext_B_to_world)
     return rot_trans_to_ext(rot, trans)
 
-
-def rot_trans_i_to_n(ext_0_to_i, ext_0_to_n): # between
-    ext_i_to_0 = inv_extrinsics(ext_0_to_i)
-    ext_n_to_0 = inv_extrinsics(ext_0_to_n)
-    return rot_trans_A_to_B(ext_i_to_0, ext_n_to_0)
-
-
-def rot_trans_j_to_i_s(ext_i_to_0_s):
-    rot_j_to_i_s, trans_j_to_i_s = [], []
-    for j in range(1, len(ext_i_to_0_s)):
-        i = j-1
-        ext_j_to_0, ext_i_to_0 = ext_i_to_0_s[j], ext_i_to_0_s[i]
-        rot_j_to_i, trans_j_to_i = rot_trans_B_to_A(ext_i_to_0, ext_j_to_0)
-        rot_j_to_i_s.append(rot_j_to_i)
-        trans_j_to_i_s.append(trans_j_to_i)
-    trans_j_to_i_s = np.array(trans_j_to_i_s).T
-    return rot_j_to_i_s, trans_j_to_i_s
-
-
-def make_relative_to_ci(ext_ci_to_c0_s):
-    relative_ci_to_c0_s = [np.diag([1,1,1,1])]
-    ci_to_c0 = ext_ci_to_c0_s[0]
-    for j in range(1,len(ext_ci_to_c0_s)):
-        cj_to_c0 = ext_ci_to_c0_s[j]
-        cj_to_ci = B_to_A_mat(ci_to_c0, cj_to_c0)
-        relative_ci_to_c0_s.append(cj_to_ci)
-    return relative_ci_to_c0_s
-
-
-def get_rot_trans(ext_mat):
-    """ return rotation matrix and translation vector from an extrinsics matrix
-
-    :param ext_mat: (3,4) or (4,4) extrinsics matrix
-    """
-    rotation_matrix = ext_mat[0:3, 0:3].astype('float64')
-    translation_vector = ext_mat[0:3, 3].astype('float64')
-    return rotation_matrix, translation_vector
-
-
-def get_rot_trans_s(mats):
-    # TODO remove this method
-    rot_s, trans_s = [], []
-    for mat in mats:
-        r,t = get_rot_trans(mat)
-        rot_s.append(r); trans_s.append(t)
-    return rot_s, np.array(trans_s).T
-
-
-def rot_trans_to_ext(rotation_mat, translation_vec):
-    translation_vec = translation_vec.reshape(3,1)
-    ext_mat = np.hstack((rotation_mat, translation_vec))
-    ext_mat = np.vstack((ext_mat, [0,0,0,1]))
-    return ext_mat.astype('float64')
-
-
-def rot_trans_stats(rot_diffs, trans_diffs, frames_idx, rel_or_abs):
-    startframe = frames_idx[0]
-    endframe = frames_idx[-1]
-    num_frames = endframe - startframe
-    rots_error_sum = np.sum(rot_diffs)
-    rot_error_avg = rots_error_sum / num_frames
-    tx_error, ty_error, tz_error = np.sum(trans_diffs, axis=1)
-    trans_error_sum = + tx_error + ty_error + tz_error
-    trans_error_avg = trans_error_sum / num_frames
-    stats = [f"avg. {rel_or_abs} rotation error per frame = {rots_error_sum:.1f}/{num_frames} = {rot_error_avg:.2f} deg",
-             f"sum of {rel_or_abs} translation errors frames [{startframe},{endframe}] = {tx_error:.1f} + {ty_error:.1f} + {tz_error:.1f} = {trans_error_sum:.1f} meters",
-             f"avg. {rel_or_abs} translation error per frame = {trans_error_sum:.1f}/{num_frames} = {trans_error_avg:.2f} meters"]
-    return stats, rots_error_sum,  trans_error_sum
-
-
-def get_rot_trans_diffs_from_mats(exts_gt, *exts_B):
-    """
-    :param exts_gt: a list of extrinsics matrices that we compare to (ground truth)
-    """
-    for exts in exts_B:
-        assert len(exts) == len (exts_B)
-    rots_gt, trans_gt = get_rot_trans_s(exts_gt)
-    rots_diffs_res, trans_diffs_res = [], []
-    for exts in exts_B:
-        rots_B, trans_B = get_rot_trans_s(exts)
-        rots_diffs, trans_diffs = get_rot_trans_diffs(rots_gt, rots_B, trans_gt, trans_B)
-        rots_diffs_res.append(rots_diffs)
-        trans_diffs_res.append(trans_diffs)
-    return rots_diffs_res, trans_diffs_res
-
-
-def get_rot_trans_diffs(rots_A, rots_B, trans_vecs_A, trans_vecs_B):
-    """
-
-    :param rots_A: list of n rotation matrices
-    :param rots_B: list of n rotation matrices
-    :param trans_vecs_A: (3,n) ndarray of translation vectos
-    :param trans_vecs_B: (3,n) ndarray of translation vectos
-    :return:
-    """
-    rot_diffs = [rotation_matrices_diff(r, q) for r, q in zip (rots_A, rots_B)]
-    rot_diffs = np.array(rot_diffs)
-    trans_diffs = np.abs(trans_vecs_A - trans_vecs_B)
-    return rot_diffs, trans_diffs
-
+def t2v(rot_mat, trans_vec):
+    rot_in_rads = rot_mat_2_euler_angles(rot_mat)
+    res = np.concatenate((rot_in_rads, trans_vec))
+    return res
 
 def rot_mat_2_euler_angles(R):
     """ returns x,y,z in radians"""
@@ -197,99 +101,18 @@ def rot_mat_2_euler_angles(R):
         z = 0
     return np.array([x, y, z])
 
+def get_rot_trans(ext_mat):
+    """ return rotation matrix and translation vector from an extrinsics matrix
 
-def rot_trans_norm(rot, trans):
-    rot_deg_norm = rotation_matrices_diff(np.diag([1, 1, 1]), rot)
-    trans_norm = np.linalg.norm(trans) # in meters
-    return rot_deg_norm, trans_norm
-
-
-def rot_trans_norm_from_ext(ext_mat):
-    rot, trans = get_rot_trans(ext_mat)
-    return rot_trans_norm(rot, trans)
-
-
-def rot_trans_norms_from_exts(ext_mats):
-    rot_norms, trans_norms = [], []
-    for mat in ext_mats:
-        r,t = get_rot_trans(mat)
-        rot_norm, trans_norm = rot_trans_norm(r,t)
-        rot_norms.append(rot_norm)
-        trans_norms.append(trans_norm)
-    return rot_norms, trans_norms
-
-
-def t2v(rot_mat, trans_vec):
-    rot_in_rads = rot_mat_2_euler_angles(rot_mat)
-    res = np.concatenate((rot_in_rads, trans_vec))
-    return res
-
-
-def concat_ci_to_cj_s(ext_ci_to_cj_s):
-    ext_c0_to_ci_s = [ext_ci_to_cj_s[0]]
-    for j in range(1, len(ext_ci_to_cj_s)): # i=j-1
-        ext_ci_to_cj = ext_ci_to_cj_s[j]
-        ext_c0_to_cj = ext_ci_to_cj @ ext_c0_to_ci_s[-1]
-        ext_c0_to_ci_s.append(ext_c0_to_cj)
-    return ext_c0_to_ci_s
-
-
-def concat_and_inv_ci_to_cj_s(ext_ci_to_cj_s):
-    ext_c0_to_ci_s = concat_ci_to_cj_s(ext_ci_to_cj_s)
-    ext_ci_to_c0_s = [inv_extrinsics(mat) for mat in ext_c0_to_ci_s]
-    return ext_ci_to_c0_s
-
-
-def concat_cj_to_ci_s(ext_cj_to_ci_s):
-    ext_ci_to_c0_s = [ext_cj_to_ci_s[0]]
-    for j in range(1, len(ext_cj_to_ci_s)):  # i=j-1
-        ext_cj_to_ci = ext_cj_to_ci_s[j]
-        ext_cj_to_c0 = ext_ci_to_c0_s[-1] @ ext_cj_to_ci
-        ext_ci_to_c0_s.append(ext_cj_to_c0)
-    return ext_ci_to_c0_s
-
-
-def get_extrinsics_inliers_stereo(pixels_left, pixels_right, pc, ext_world_to_cam, ext_l_to_r, k, threshold=2):
-    """ Computes the inliers of matches between pixels and point-cloud, w.r.t. an extrinsics matrix.
-    The inputs are:
-    (1) matching pixels in left and right images.
-    (2) their 3D locations (in world CS)
-    (3) Extrinsics matrices: ext world_to_cam and ext_left_to_right.
-    We project the point-cloud to pixels_left and pixels_right, using the previous matrices, to get proj_pixels_left and proj_pixels_right.
-    We then filter, so we keep only those points that're consistent with the ext_mats. That is, their world-point is projected close
-    to both their pixels_left and pixels_right locations.
-
-    :param pixels_left: (2,n) pixels in left image, matched to pixels_right and pc
-    :param pixels_right: (2,n) pixels in right image, matched to pixels_left and pc
-    :param pc: (3,n) point-cloud, matched to pixels_left and pixels_right
-    :param ext_world_to_cam: (4,4) extrinsics matrix from WORLD CS to left-camera CS
-    :param ext_l_to_r: (4,4) extrinsic matrix from left-camera CS to right-camera CS
-    :param k:  (4,4) intrinsics camera matrix
-    :param threshold: L2 distance used as reprojection threshold to determine inliers.
-    :return:
-        inliers - boolean ndarray (n,), with True in indices of points that were projected close with the extrinsics
+    :param ext_mat: (3,4) or (4,4) extrinsics matrix
     """
-    assert pixels_left.shape[1] == pixels_right.shape[1] == pc.shape[1]
-    # fix shape if needed
-    if pc.shape[0] == 3:
-        pc = np.vstack((pc, np.ones(pc.shape[1])))  # (4,n)
+    rotation_matrix = ext_mat[0:3, 0:3].astype('float64')
+    translation_vector = ext_mat[0:3, 3].astype('float64')
+    return rotation_matrix, translation_vector
 
-    # compute projection matrices
-    projection_world_to_left = k @ ext_world_to_cam  # (3,4) # from world to pixels_left
-    ext_world_to_right = ext_l_to_r @ ext_world_to_cam  # (4,4) # from world to camera_right
-    projection_world_to_right = k @ ext_world_to_right  # (3,4) # from world to pixels_right
+def rot_trans_to_ext(rotation_mat, translation_vec):
+    translation_vec = translation_vec.reshape(3,1)
+    ext_mat = np.hstack((rotation_mat, translation_vec))
+    ext_mat = np.vstack((ext_mat, [0,0,0,1]))
+    return ext_mat.astype('float64')
 
-    # project point-cloud to left image
-    projected_left = projection_world_to_left @ pc  # (3,n) inhomogeneous pixels
-    projected_left = projected_left[0:2] / projected_left[-1]  # (2,n)
-
-    # project point-cloud to right image
-    projected_right = projection_world_to_right @ pc  # (3,n) inhomogeneous pixels
-    projected_right = projected_right[0:2] / projected_right[-1]  # (2,n)
-
-    projection_errors_left = np.linalg.norm((pixels_left - projected_left), axis=0) # L2 norm
-    projection_errors_right = np.linalg.norm((pixels_right - projected_right), axis=0)  # L2 norm
-    inliers_left = projection_errors_left <= threshold
-    inliers_right = projection_errors_right <= threshold
-    inliers = inliers_left * inliers_right # (n,)
-    return inliers

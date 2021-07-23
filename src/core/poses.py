@@ -1,5 +1,4 @@
-""" Class for storing poses (extrinsics matrices) and computing motion between them.
-Encapsulates the calculations behind a beautiful API. """
+""" Class for storing poses (extrinsics matrices) and computing motion between them. """
 
 from gtsam import Pose3
 from gtsam.symbol_shorthand import X
@@ -7,6 +6,7 @@ import numpy as np
 
 from collections import defaultdict
 from enum import Enum, auto
+from core.pose_vector import PoseVector
 
 WORLD = 0
 
@@ -21,8 +21,22 @@ class Poses:
     def __init__(self):
         self.poses = defaultdict(dict)
         self.poses[WORLD][WORLD] = Pose3()
-        self.status = ""
-        self.source_idx = 0
+    
+    def __getstate__(self):
+        new_poses = defaultdict(dict)
+        for j in self.poses.keys():
+            for i, pose in self.poses[j].items():
+                new_poses[j][i] = pose.matrix()
+        return new_poses
+
+    def __getitem__(self, item):
+        return self.poses[item]
+    
+    def __setstate__(self, new_poses):
+        self.poses = defaultdict(dict)
+        for j in new_poses.keys():
+            for i, ext_mat in new_poses[j].items():
+                self.poses[j][i] = Pose3(ext_mat)
     
     def get_pose_from(self, source_idx):
         """ usage: poses.get_pose_from(source).to(target) """
@@ -56,6 +70,8 @@ class Poses:
     
     def _get_pose_from_to(self, source_idx, target_idx):
         """ private method, try to extract relative pose in various ways """
+        if source_idx == target_idx:
+            return Pose3()
         try:
             return self.poses[source_idx][target_idx]
         except KeyError:
@@ -64,14 +80,7 @@ class Poses:
             pose_from_target_to_source = self.poses[target_idx][source_idx]
             return pose_from_target_to_source.inverse()
         except KeyError:
-            pass
-        # compute pose from source to target by composing from i to i-1
-        pose_source_to_target = Pose3()
-        for j in range(source_idx, target_idx, -1):
-            i = j-1
-            pose_j_to_i = self.poses[j][i]
-            pose_source_to_target = pose_j_to_i.compose(pose_source_to_target)
-        return pose_source_to_target
+            raise Exception
 
     def to(self, target_idx):
         assert target_idx <= self.source_idx
@@ -84,7 +93,14 @@ class Poses:
             pose_source_to_target = self._get_pose_from_to(self.source_idx, target_idx)
             return pose_source_to_target.translation()
         elif self.status == Status.GET_DIST:
-            pose_source_to_target = self._get_pose_from_to(self.source_idx, target_idx)
+            try:
+                pose_source_to_target = self.poses[self.source_idx][target_idx]
+            except KeyError:
+                pose_source_to_target = Pose3()
+                for j in range(self.source_idx, target_idx, -1):
+                    i = j-1
+                    pose_j_to_i = self.poses[j][i]
+                    pose_source_to_target = pose_j_to_i.compose(pose_source_to_target)
             return np.linalg.norm(pose_source_to_target.translation())
         elif self.status == Status.SET_POSE:
             self.target_idx = target_idx
@@ -96,13 +112,7 @@ class Poses:
 
         :param value: either ndarray or gtasm.Pose3 objects
         """
-        pose_source_to_target = Pose3(value)
-        # add pose from source to target
-        self.poses[self.source_idx][self.target_idx] = pose_source_to_target
-        # add pose from source to world
-        # pose_target_to_world = self.poses[self.target_idx][WORLD]
-        # pose_source_to_world = pose_target_to_world.compose(pose_source_to_target)
-        # self.poses[self.source_idx][WORLD] = pose_source_to_world
+        self.poses[self.source_idx][self.target_idx] =  Pose3(value)
 
     def along_path(self, path_frames):
         """ usage: poses.get_path_pose_from(source).to(target).along_path(path_frames).
@@ -119,13 +129,14 @@ class Poses:
             pose_from_source_to_target = pose_from_source_to_target.compose(pose_from_j_to_i)
         return pose_from_source_to_target
 
-    def get_path_poses(self, path_frames):
-        """ gets path [target, frame1..., frame_n] and computes poses from frames to target, using frames along the path.
+    def get_cumulative_path_poses(self, path_frames, as_np=False):
+        """ gets path [target, frame1..., frame_n] and computes cumulative poses from frames to target, using frames along the path.
         e.g. if path is [0,10,20,30] then reutrns [0_to_0, 10_to_0, 20_to_0, 30_to_10],
         with 20_to_0 = 10_to_0 @ 20_to_10
 
         :param path_frames: list of n+1 frames [target, frame1, ...., frame_n]
-        :return: list of n+1 poses: [id, pose_from_frame1_to_target, ... ,pose_from_frame_n_to_target]
+        :param as_np: If True, return list of numpy arrays
+        :return: PoseVector of len n+1 poses: [id, pose_from_frame1_to_target, ... ,pose_from_frame_n_to_target]
         """
         poses_to_target = [Pose3()]
         for i,j in zip(path_frames[:-1], path_frames[1:]):
@@ -133,16 +144,28 @@ class Poses:
             pose_from_i_to_target = poses_to_target[-1]
             pose_from_j_to_target = pose_from_i_to_target.compose(pose_from_j_to_i)
             poses_to_target.append(pose_from_j_to_target)
+        if as_np:
+            return [pose.matrix() for pose in poses_to_target]
+        else:
+            return PoseVector(poses_to_target)
 
-        return poses_to_target
+    def get_path_poses(self, path_frames, as_np=False):
+        """ gets path [frame1, ..., frame_n] and returns the relative poses along the path.
+        e.g. if path is [0,10,20] returns [0_to_0, 10_to_0, 20_to_10].
 
-    def update_with_Values(self, frames_idx, values):
-        """ update poses with results of bundle adjustment.
-
-        :param frames_idx: list of n+1 frames [startframe, frame1,...,frame_n]
-        :param values: gtsam.Values object, contains bundle estimations of pose_from_frame_i_to_startframe
+        :param path_frames: list of n frames
+        :param as_np: If True, return list of numpy arrays
+        :return: list of n poses of type frame_(i)_to_frame_(i-1)
         """
-        startframe = frames_idx[0]
-        for i in frames_idx[1:]:
-            # update pose from i to bundle-startframe
-            self.poses[i][startframe] = values.atPose3(X(startframe)).between(values.atPose3(X(i)))
+        poses = [Pose3()]
+        for i, j in zip(path_frames[:-1], path_frames[1:]):
+            poses.append(self.poses[j][i])
+        if as_np:
+            return [pose.matrix() for pose in poses]
+        else:
+            return PoseVector(poses)
+
+    def update_with_Values(self, values, edge_list):
+        for i,j in edge_list:
+            self.poses[j][i] = values.atPose3(X(i)).between(values.atPose3(X(j)))
+
