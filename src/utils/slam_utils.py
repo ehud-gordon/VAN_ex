@@ -6,7 +6,6 @@ import factor_graph.gtsam_utils as g_utils
 from utils.shortest_path import shortest_path
 from utils import kitti
 
-
 ########### UTILS ###############
 
 def get_stereo_images(idx, dataset_path=None, color_mode=cv2.IMREAD_GRAYSCALE):

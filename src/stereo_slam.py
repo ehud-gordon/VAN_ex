@@ -6,9 +6,11 @@ import numpy as np
 from gtsam.symbol_shorthand import X
 from scipy.sparse.csgraph import dijkstra
 from scipy.sparse import lil_matrix
+
 import os
 from itertools import compress
 import pickle
+
 from features.tracks import StereoTracksDB
 from factor_graph.pixel_graph import PixelGraph
 from factor_graph.pose_graph import PoseGraph
@@ -53,7 +55,6 @@ class StereoSLAM:
         # iterate over frames, in frontend extract successive poses using PnP, in backend build a pose graph and add loop closures
         for j in self.frames[1:]:
             i = self.frames[j-1] # i and j denote two consecutive frames/cameras, with i before j
-            if i % 30 == 0: print(f"main(), i={i}")
             # compute sf (stereo features: 2D keypoints + point-cloud) of frames i and j
             sf_i = self.get_stereo_features(i)
             sf_j = self.get_stereo_features(j)

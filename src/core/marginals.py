@@ -1,9 +1,12 @@
 """ Class for storing and computing conditional covariances between poses. """
 
 import numpy as np
+
 from collections import defaultdict
 from enum import Enum, auto
+
 import factor_graph.gtsam_utils as g_utils
+
 WORLD = 0
 
 class Status(Enum):

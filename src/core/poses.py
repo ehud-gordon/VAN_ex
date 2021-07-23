@@ -1,11 +1,12 @@
 """ Class for storing poses (extrinsics matrices) and computing motion between them. """
 
+import numpy as np
 from gtsam import Pose3
 from gtsam.symbol_shorthand import X
-import numpy as np
 
 from collections import defaultdict
 from enum import Enum, auto
+
 from core.pose_vector import PoseVector
 
 WORLD = 0

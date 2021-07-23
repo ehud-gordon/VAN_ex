@@ -1,7 +1,7 @@
 import argparse
 
 from utils import kitti
-from stereo_slam import StereoSLAM
+import stereo_slam
 import utils.sys_utils as sys_utils
 
 def parse_args():
@@ -17,9 +17,12 @@ def parse_args():
     parser.add_argument("--feature_grid", action="store_true", default=False, help="boolean, whether to detect keypoints based on grid")
 
     args = parser.parse_args()
+    # if endframe==0, get all frames
     if args.endframe == 0:
-        seq_length = kitti.get_seq_length(dataset_path=args.dataset_path) # 2761
-        args.endframe = seq_length - 1 # 2760
+        sequence_length = kitti.get_seq_length(dataset_path=args.dataset_path) # 2761
+        args.endframe = sequence_length - 1 # 2760
+
+    sys_utils.make_dir_if_needed(args.out_dir)
     
     args.frames = list(range(args.startframe, args.endframe+1)) # list of frames indices
 
@@ -30,5 +33,5 @@ def parse_args():
 
 if __name__=="__main__":
     args, k, ext_l_to_r = parse_args()
-    slam = StereoSLAM(args, k, ext_l_to_r)
+    slam = stereo_slam.StereoSLAM(args, k, ext_l_to_r)
     slam.main()

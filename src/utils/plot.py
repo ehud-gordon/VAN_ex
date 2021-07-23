@@ -1,7 +1,10 @@
 """ plot functions """
+
 import numpy as np
 import plotly.graph_objects as go
+
 import os, webbrowser
+
 from utils import sys_utils
 
 def plotly_save_fig(fig, title="", plot_dir="", save=False, plot=True):

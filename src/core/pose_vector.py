@@ -1,6 +1,7 @@
 import numpy as np
-from gtsam import Pose3
 import gtsam
+from gtsam import Pose3
+
 import utils.geometry
 
 

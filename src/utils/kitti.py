@@ -1,9 +1,12 @@
 """ Utility functions to read kitti images and matrices """
+
 import cv2
-import os
 import numpy as np
+
+import os
 import re
 import glob
+
 import utils.geometry
 from core.pose_vector import PoseVector
 

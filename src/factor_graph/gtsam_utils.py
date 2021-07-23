@@ -1,17 +1,14 @@
 """ Collection of utilities for use with gtsam package """
-import gtsam
-import utils.geometry
-from gtsam import KeyVector, Pose3
-from gtsam.utils import plot as g_plot
 import numpy as np
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-from collections import defaultdict
+import gtsam
+from gtsam import KeyVector
+from gtsam.utils import plot as g_plot
 from gtsam.symbol_shorthand import X
-import os, pickle
+import plotly.graph_objects as go
 
 import utils
-from utils.sys_utils import und_title
+import utils.geometry
+
 
 def is_gt(pose):
     return gtsam.__name__ in str(type(pose))

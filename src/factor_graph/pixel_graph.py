@@ -5,7 +5,8 @@ from numpy import pi
 import gtsam
 from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D
 from gtsam.symbol_shorthand import X, P
-import factor_graph.gtsam_utils as gtsam_utils
+
+from factor_graph import gtsam_utils
 
 class PixelGraph:
     def __init__(self, k, ext_l_to_r):

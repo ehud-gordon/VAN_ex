@@ -3,10 +3,12 @@ Performs triangulation. I've also included my version,
 but the code uses cv2.triangulatePoints(), for performance reasons.
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
+
 import os
+
 import utils
 import utils.sys_utils as sys_utils
 
