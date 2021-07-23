@@ -18,7 +18,7 @@ from features.features2d import Features
 from features.features_stereo import compute_stereo_features, match_two_stereo_pairs
 from calib3d import pnp
 import factor_graph.gtsam_utils as g_utils
-from slam_utils import get_stereo_images, compute_mahalanobis_distance, filter_stereo_features
+from utils.slam_utils import get_stereo_images, compute_mahalanobis_distance, filter_stereo_features
 
 
 # CONSTANTS
@@ -150,14 +150,6 @@ class StereoSLAM:
         for i, j in zip(self.keyframes[:-1], self.keyframes[1:]):
             cov_j_conditional_on_i = g_utils.conditional_covariance_from_Marginals(marginals, i, j)
             conditional_covariances.append(cov_j_conditional_on_i)
-
-        import utils.geometry
-        my_dws = utils.geometry.get_dws_from_cam_to_world_s(poses)
-        my_sd = (my_dws, 'final', 'red')
-        import kitti
-        kitti_sd = kitti.get_sd(self.keyframes)
-        import utils.plot
-        utils.plot.plot_3D_cams([my_sd, kitti_sd], self.keyframes, title="StereoSLAM", plot_dir=self.args.out_dir, save=True, plot=False)
         
         # serialize
         d = {'poses': poses, 'conditional_covariances': conditional_covariances}

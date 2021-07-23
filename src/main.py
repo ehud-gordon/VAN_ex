@@ -1,6 +1,6 @@
 import argparse
 
-import kitti
+from utils import kitti
 from stereo_slam import StereoSLAM
 import utils.sys_utils as sys_utils
 

@@ -4,7 +4,8 @@ import numpy as np
 
 import factor_graph.gtsam_utils as g_utils
 from utils.shortest_path import shortest_path
-import kitti
+from utils import kitti
+
 
 ########### UTILS ###############
 
