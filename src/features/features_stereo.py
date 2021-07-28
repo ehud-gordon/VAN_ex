@@ -51,11 +51,10 @@ def compute_stereo_features(left_image, right_image, features, k, ext_l_to_r, fr
     # find matching keypoints between left and right images
     keypoints_left, descriptors_left, keypoints_right = features.detectComputeMatch(left_image, right_image, is_stereo=True)
     # compute point-cloud
-    ext_id = np.diag([1,1,1,1]) # the (4,4) identity matrix
-    pc = triangulate(keypoints_left, keypoints_right, k, ext_id, ext_l_to_r)
+    pc = triangulate(keypoints_left, keypoints_right, k, np.diag([1,1,1,1]), ext_l_to_r)
     return StereoFeatures(frame_idx, keypoints_left, descriptors_left, keypoints_right, pc)
 
-def match_two_stereo_pairs(features, sf1, sf2):
+def match_stereo_pairs(features, sf1, sf2):
     """ Matches between two StereoFeatures objects, based on left image descriptors.
 
     :param features: Features object, used for keypoint detection and matching.

@@ -1,9 +1,12 @@
 """ Utility methods for use with StereoSLAM"""
 import cv2
 import numpy as np
+from scipy.sparse.csgraph import dijkstra
 
 import factor_graph.gtsam_utils as g_utils
 from utils.shortest_path import shortest_path
+
+
 from utils import kitti
 
 ########### UTILS ###############
@@ -13,18 +16,20 @@ def get_stereo_images(idx, dataset_path=None, color_mode=cv2.IMREAD_GRAYSCALE):
     img_left, img_right = kitti.read_images(idx, dataset_path, color_mode)
     return img_left, img_right
 
+def get_shortest_path(j, k, distance_matrix):
+    predecessors = dijkstra(distance_matrix.tocsr(), directed=False, indices=j, return_predecessors=True)[1]
+    return shortest_path(j, k, predecessors)
 
-def compute_mahalanobis_distance(j, k, poses, marginals, predecessors):
-    """ compute Mahalanobis distance between poses j and k using shortest path
+def mahalanobis(j, k, poses, marginals, path):
+    """ compute Mahalanobis distance between poses j and k using (shortest) path
 
     :param poses: Poses object
     :param marginals: Marginals object
-    :param predecessors: result of dijkstra(indices=j)
+    :param path: (shortest) path from j to k, along which we compute the relative pose and covariance
     """
-    path_from_j_to_k = shortest_path(j, k, predecessors)
-    pose_from_j_to_k = poses.get_path_pose_from(j).to(k).along_path(path_from_j_to_k)
+    pose_from_j_to_k = poses.get_path_pose_from(j).to(k).along_path(path)
     t2v = g_utils.t2v(pose_from_j_to_k)
-    cov_j_conditional_on_k = marginals.get_path_cov_of(j).conditional_on(k).along_path(path_from_j_to_k)
+    cov_j_conditional_on_k = marginals.get_path_cov_of(j).conditional_on(k).along_path(path)
     mahal_dist = t2v.T @ cov_j_conditional_on_k @ t2v
     return mahal_dist.item()
 

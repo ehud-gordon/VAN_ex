@@ -13,8 +13,8 @@ def filter_(bool_array, *nd_arrays):
         assert len(bool_array) == arr.shape[1]
     return [arr[:,bool_array] for arr in nd_arrays]
 
-
 def get_perc_largest_indices(arr, perc):
+
     """ find indices of the percent largest element in array
 
     :param arr: (n,) ndarray of numbers
@@ -29,3 +29,12 @@ def get_perc_largest_indices(arr, perc):
     bool_array[idx_of_largest[0:num_of_largest]] = True
 
     return bool_array
+
+def get_lengths_medians(error_as_dist_dict):
+        lengths = []
+        medians = []
+        for length, error_list in error_as_dist_dict.items():
+            lengths.append(length)
+            medians.append(np.median(error_list))
+        return lengths, medians
+

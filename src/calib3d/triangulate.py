@@ -13,8 +13,8 @@ import utils
 import utils.sys_utils as sys_utils
 
 def triangulate(pixels1, pixels2, k, ext_WORLD_to_1, ext_WORLD_to_2):
-    """
-    Get 3D, WORLD coordinates, via triangulation of matched pixels from two images
+    """ Get 3D, WORLD coordinates, via triangulation of matched pixels from two images.
+    
     :param pixels1: (2,n) ndarray of pixels in images 1 that're matched to pixels2
     :param pixels2: (2,n) ndarray of pixels in images 2 that're matched to pixels1
     :param k: intrinsics matrix shared by cameras 1 and 2, (3,4) ndarray
@@ -23,8 +23,8 @@ def triangulate(pixels1, pixels2, k, ext_WORLD_to_1, ext_WORLD_to_2):
     :return: pc_3d: a (3,n) ndarray of the point cloud - landmarks in WORLD coordinate-system
     """
     assert pixels1.shape == pixels2.shape
-    proj_WORLD_to_1 = k @ ext_WORLD_to_1  # (3,4) ndarray, projection matrix from world CS to CS1
-    proj_WORLD_to_2 = k @ ext_WORLD_to_2  # (3,4) ndarray, projection matrix from world CS to CS2
+    proj_WORLD_to_1 = k @ ext_WORLD_to_1  # (3,4) ndarray, projection matrix from world CS to CS of camera 1
+    proj_WORLD_to_2 = k @ ext_WORLD_to_2  # (3,4) ndarray, projection matrix from world CS to CS of camera 2
     # get pc (point cloud)
     pc_4d = cv2.triangulatePoints(projMatr1=proj_WORLD_to_1, projMatr2=proj_WORLD_to_2, projPoints1=pixels1, projPoints2=pixels2)  # (4,n)
     pc_3d = pc_4d[0:3] / pc_4d[-1]  # (3,n)

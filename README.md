@@ -1,26 +1,32 @@
-## Visual SLAM project 
-Add Explanation about the code 
+## GraphSLAM
+Performs SLAM on a set of stereo images, finds cameras locations using a combination of PnP, Bundle Adjustment,
+pose graph and loop closures. Detailed explanation in the pdf under /docs.
+
+## Usage
+Dependencies are listed in `reuquirements.txt`
+Then run:  
+```python main.py [--dataset_path path] [--out_dir path]```  
+`dataset_path` should point to a directory holding files
+in kitti's format. 
 
 ## Abbreviations
 | Abbreviation      | Meaning    |  
 |:-----------------:|:------------------:|
-ci| pose of camera at frame i
-i,j | two consecutive objects, i comes before j
-sf | stereo features (keypoints + point-cloud)
-k | the intrinsic camera matrix
-ext | extrinsics matrix
-ext_id | the I4 idnetity matrix
-mat | matrix
-rot | rotation
-trans | translation
-dw | location of camera's origin w.r.t world coordinates
-pc | point cloud
-(m,n) | ndarray of shape (m,n)
+i, j | two consecutive frames/cameras, i comes before j
 cond | conditional
 cov | covariance
 CS | coordinate system
-cur | current
-img | image
+sf | stereo features (keypoints + point-cloud)
+pc | point cloud
+k | the intrinsic camera matrix
+ext | extrinsics matrix
+(m,n) | ndarray of shape (m,n)
+dw | location of camera's origin w.r.t world coordinates
+mat | matrix
+rot | rotation
+trans | translation
+
+
 
 
 

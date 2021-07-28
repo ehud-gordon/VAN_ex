@@ -4,6 +4,7 @@ from utils import kitti
 import stereo_slam
 import utils.sys_utils as sys_utils
 
+
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--dataset_path", type=str, default=kitti.data_path(), help="dir path of kitti sequences and poses")
@@ -27,7 +28,7 @@ def parse_args():
     args.frames = list(range(args.startframe, args.endframe+1)) # list of frames indices
 
     # Get k - the camera matrix (intrinsics), and the pose from the left to right stereo camera
-    k, ext_id, ext_l_to_r = kitti.read_cameras()
+    k, ext_id, ext_l_to_r = kitti.read_cameras() # (3,4) , (4,4), (4,4)
     
     return args, k, ext_l_to_r
 

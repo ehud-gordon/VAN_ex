@@ -4,8 +4,7 @@ import numpy as np
 from numpy import pi
 import gtsam
 from gtsam import Pose3, StereoPoint2, GenericStereoFactor3D
-from gtsam.symbol_shorthand import X, P
-
+from gtsam.symbol_shorthand import X,P
 from factor_graph import gtsam_utils
 
 class PixelGraph:
@@ -16,9 +15,8 @@ class PixelGraph:
         """
         self.prior_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([1*pi/180, 1*pi/180, 1*pi/180, 0.3, 0.3, 0.3]))
         self.stereo_pixels_noise = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
-        self.stereo_camera = gtsam_utils.get_stereo_camera(k, ext_l_to_r)
-
-
+        self.stereo_cal = gtsam_utils.get_stereo_cal_camera(k, ext_l_to_r)
+        
     def build(self, frames, poses, tracks):
         """ builds factor graph using matched stereo pixels as constraints.
 
@@ -33,7 +31,7 @@ class PixelGraph:
 
         # Add initial estimates for cameras poses
         self.initialEstimate.insert(X(startframe), Pose3())
-        for i, j in zip(frames[:-1], frames[1:]):
+        for i, j in zip(frames, frames[1:]):
             pose_from_j_to_i = poses.get_pose_from(j).to(i) 
             pose_from_i_to_startframe = self.initialEstimate.atPose3(X(i))
             pose_from_j_to_startframe = pose_from_i_to_startframe.compose(pose_from_j_to_i)
@@ -47,21 +45,21 @@ class PixelGraph:
         # Add factors for all tracks
         for frame in frames:
             for track in tracks.get_tracks(frame):
-                # filter irrelevant tracks
+                # skip irrelevant tracks
                 if (frame==startframe and track.next_track is None) or track.orig_cam_id==endframe:
                     continue
 
                 # add StereoFactor
                 stereo_point = StereoPoint2(track.point2_left_x, track.point2_right_x, track.point2_left_y)
-                stereoFactor = GenericStereoFactor3D(stereo_point, self.stereo_pixels_noise, X(frame), P(track.id), self.stereo_camera)
-                self.graph.add(stereoFactor)
-
+                stereo_factor = GenericStereoFactor3D(stereo_point, self.stereo_pixels_noise, X(frame), P(track.id), self.stereo_cal)
+                self.graph.add(stereo_factor)
+                
                 # if this is the first time we add this track, add initial estimate
                 if P(track.id) not in self.initialEstimate.keys():
-                    # convert point to startframe CS
+                    # convert point to startframe CS 
                     pose_from_frame_to_startframe = self.initialEstimate.atPose3(X(frame))
                     point3_in_startframe_cs = pose_from_frame_to_startframe.transformFrom(track.point3)
-                    self.initialEstimate.insert( P(track.id), point3_in_startframe_cs )
+                    self.initialEstimate.insert( P(track.id), point3_in_startframe_cs)
 
         return self
 
@@ -73,5 +71,6 @@ class PixelGraph:
         """
         optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph , self.initialEstimate)
         values = optimizer.optimize()
+        # extract factor errors for
         marginals = gtsam.Marginals(self.graph, values)
         return values, marginals

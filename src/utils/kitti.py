@@ -40,9 +40,9 @@ def read_images(idx, dataset_path=None, color_mode=cv2.IMREAD_GRAYSCALE):
     return img1, img2
 
 def read_cameras(dataset_path=None):
-    """:return: k - (3,3) intrinsics camera matrix (shared by both stereo cameras).
-             m1 - (3,4) extrinstic camera matrix [R|t] of left camera. With kitti this is the identity.
-             m2 - (3,4), extrinstic camera matrix [R|t] of right camera.
+    """:return: k - (3,4) intrinsics camera matrix (shared by both stereo cameras).
+             m1 - (4,4) extrinstic camera matrix [R|t] of left camera. With kitti this is the identity.
+             m2 - (4,4), extrinstic camera matrix [R|t] of right camera.
              to get camera projection matrix from WORLD CS to left image, compute k @ m1  """
     # read camera matrices
     if dataset_path is None:

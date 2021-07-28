@@ -7,20 +7,21 @@ import utils
 def pnp(k, pc, pixels, size):
     """ Computes extrinsics matrix from world to camera.
 
-    :param pc: point cloud in world CS
-    :param pixels: matching pixels of points in pc
+    :param k: (3,4) intrinsics camera matrix
+    :param pc: (3,n) point cloud in world CS
+    :param pixels: (2,n) matching pixels of points in pc
     :param size: number of points to use for cv2.SolvePnP
-    :return: the extrinsics matrix from the world CS to the camera CS
+    :return: (4,4) extrinsics matrix from the world CS to the camera CS
     """
+
     assert size>=4
-    k3 = k[:,:3] # (3,3)
     pc_pnp, pixels_pnp = reshape_for_cv_pnp(pc, pixels, size=size)
     # object (world) points are in world CS, returns rotation and translation from world (object) to cam.
     try:
         if size == 4:
-            retval, rvec, tvec = cv2.solvePnP(objectPoints=pc_pnp, imagePoints=pixels_pnp, cameraMatrix=k3, distCoeffs=None, flags=cv2.SOLVEPNP_P3P)
+            retval, rvec, tvec = cv2.solvePnP(objectPoints=pc_pnp, imagePoints=pixels_pnp, cameraMatrix=k[:,:3], distCoeffs=None, flags=cv2.SOLVEPNP_P3P)
         else:
-            retval, rvec, tvec = cv2.solvePnP(objectPoints=pc_pnp, imagePoints=pixels_pnp, cameraMatrix=k3, distCoeffs=None)
+            retval, rvec, tvec = cv2.solvePnP(objectPoints=pc_pnp, imagePoints=pixels_pnp, cameraMatrix=k[:,:3], distCoeffs=None)
     except:
         return None
     if not retval:
@@ -30,14 +31,14 @@ def pnp(k, pc, pixels, size):
 
 def pnp_stereo_ransac(sf1, sf2, k, ext_l_to_r, max_iters=np.inf):
     """ performs PnP with consensus matching.
-    w.r.t. some pose_from_2_to_1, inliers are defined as those satisfying the below:
-    (1) their 3D locations (from sf2.pc) are projected neat to both sf1.pixels_left and sf1.pixels_right
-    (2) their corrected 3D locations (sf1.pc, and sf2.pc transformed to sf1 CS) are close
+    a point is considered an inlier w.r.t. some pose_from_2_to_1 if it satisfies both:
+    (1) its 3D location (from sf2.pc) is projected near to both sf1.pixels_left and sf1.pixels_right.
+    (2) its 3D location from frame 2, when transformed to frame1 CS, is near sf1.pc
 
     :param sf1: StereoFeatures (2D keypoints + point-cloud) of frame 1
     :param sf2: StereoFeatures (2D keypoints + point-cloud) of frame 2
-    :param k: intrinsics camera matrix (shared by both cameras)
-    :param ext_l_to_r: extrinsics matrix from left to right
+    :param k: (3,4) ndarray, intrinsics camera matrix (shared by both cameras)
+    :param ext_l_to_r: (4,4) ndarry, extrinsics matrix from left to right
     :param int max_iters: maximum number of ransac iterations to perform
     :return:
             pose_2_to_1: (4,4) extrinsics matrix from left_camera 2 to left_camera 1
@@ -61,7 +62,7 @@ def pnp_stereo_ransac(sf1, sf2, k, ext_l_to_r, max_iters=np.inf):
     while iters_done <= min(iters_to_do, max_iters):
         pose_2_to_1 = pnp(k, pc, pixels_left, size=4)
         if pose_2_to_1 is None: continue
-        inliers_bool = get_extrinsics_inliers_stereo(sf1, sf2, pose_2_to_1, ext_l_to_r, k)
+        inliers_bool = get_pose_inliers(sf1, sf2, pose_2_to_1, ext_l_to_r, k)
         inliers_percent = sum(inliers_bool) / pixels_left.shape[1]
         eps = min(eps,1-inliers_percent) # get upper bound on percent of outliers
         iters_done += 1
@@ -86,7 +87,7 @@ def pnp_stereo_ransac(sf1, sf2, k, ext_l_to_r, max_iters=np.inf):
 
     # Verifing that refining improved the extrinsics matrix
     rot_diff, trans_diff = utils.geometry.compare_ext_mats(pose_2_to_1_refined, best_pose_2_to_1)
-    inliers_bool_refined = get_extrinsics_inliers_stereo(sf1, sf2, pose_2_to_1_refined, ext_l_to_r, k)
+    inliers_bool_refined = get_pose_inliers(sf1, sf2, pose_2_to_1_refined, ext_l_to_r, k)
     num_inliers_after_refine = sum(inliers_bool_refined)
     inliers_percent_after_refine = num_inliers_after_refine / pixels_left.shape[1]
     # this is a strange bug the resulting ext is wildly incorrect
@@ -121,57 +122,30 @@ def reshape_for_cv_pnp(pc, pixels, size):
     pixels_size = np.ascontiguousarray(pixels_size.T).reshape((size, 1, 2))
     return pc_size, pixels_size
 
-def get_extrinsics_inliers_stereo(sf1, sf2, pose_2_to_1, ext_l_to_r, k, threshold=2):
+def get_pose_inliers(sf1, sf2, pose_2_to_1, ext_l_to_r, k):
     """ Computes the inliers of matches between pixels and point-cloud, w.r.t. an extrinsics matrix.
-    The inputs are:
-    (1) matching pixels in left and right images.
-    (2) their 3D locations (in frame1 and frame2 CS)
-    (3) Extrinsics matrices: pose_from_2_to_1 and ext_left_to_right.
 
-    W.r.t. some pose_from_2_to_1, inliers are defined as those satisfying the below:
-    (1) their 3D locations (from sf2.pc) are projected near to both sf1.pixels_left and sf1.pixels_right
-    (2) their corrected 3D locations (sf1.pc, and sf2.pc transformed to sf1 CS) are close
+    a point is considered an inlier w.r.t. some pose_from_2_to_1 if it satisfies both:
+    (1) its 3D location (from sf2.pc) is projected near to both sf1.pixels_left and sf1.pixels_right.
+    (2) its 3D location from frame 2, when transformed to frame1 CS, is near sf1.pc
 
-    :param sf1: StereoFeatures of frame 1
-    :param sf2: StereoFeatures of frame2
+    :param sf1: StereoFeatures of frame 1, matched to sf2
+    :param sf2: StereoFeatures of frame 2, matched to sf1
     :param pose_2_to_1: (4,4) extrinsics matrix from left-camera-2 CS to left-camera-1 CS
     :param ext_l_to_r: (4,4) extrinsic matrix from left-camera CS to right-camera CS
-    :param k: (4,4) intrinsics camera matrix
-    :param threshold: L2 distance used as reprojection threshold to determine inliers.
+    :param k: (3,4) intrinsics camera matrix
     :return:
         inliers - boolean ndarray (n,), with True in indices of inliers
     """
-    pixels_left = sf1.keypoints_left # (2,n) pixels in left image, matched to pixels_right and pc
-    pixels_right = sf1.keypoints_right # (2,n) pixels in right image, matched to pixels_left and pc
-    pc = sf2.pc # (3,n) point-cloud, matched to pixels_left and pixels_right
-    assert pixels_left.shape[1] == pixels_right.shape[1] == pc.shape[1]
-    # fix shape if needed
-    if pc.shape[0] == 3:
-        pc = np.vstack((pc, np.ones(pc.shape[1])))  # (4,n)
-
-    # compute projection matrices
-    projection_world_to_left = k @ pose_2_to_1  # (3,4) # from world to pixels_left
-    ext_world_to_right = ext_l_to_r @ pose_2_to_1  # (4,4) # from world to camera_right
-    projection_world_to_right = k @ ext_world_to_right  # (3,4) # from world to pixels_right
-
-    # project point-cloud to left image
-    projected_left = projection_world_to_left @ pc  # (3,n) inhomogeneous pixels
-    projected_left = projected_left[0:2] / projected_left[-1]  # (2,n)
-
-    # project point-cloud to right image
-    projected_right = projection_world_to_right @ pc  # (3,n) inhomogeneous pixels
-    projected_right = projected_right[0:2] / projected_right[-1]  # (2,n)
-
-    projection_errors_left = np.linalg.norm((pixels_left - projected_left), axis=0) # L2 norm
-    projection_errors_right = np.linalg.norm((pixels_right - projected_right), axis=0)  # L2 norm
-    pixels_inliers_left = projection_errors_left <= threshold
-    pixels_inliers_right = projection_errors_right <= threshold
-    pixel_inliers = pixels_inliers_left * pixels_inliers_right # (n,)
-
-    # compute point cloud inliers
-    pc_2_in_CS_1 = utils.geometry.transform_pc_to_world(pose_2_to_1, pc)
-    pc_l2_norm = np.linalg.norm(pc_2_in_CS_1-sf1.pc, axis=0)
-    pc_inliers = pc_l2_norm < 3
+    # check pixel projection errors
+    projected_left, projected_right = utils.geometry.project_stereo(pose_2_to_1,k, sf2.pc, ext_l_to_r) # (3,n), (3,n)
+    projection_error_left = np.linalg.norm(sf1.keypoints_left - projected_left, axis=0) # L2 norm
+    projection_error_right = np.linalg.norm(sf1.keypoints_right - projected_right, axis=0)  # L2 norm
+    pixel_inliers = (projection_error_left <= 2) * (projection_error_right <= 2) # (n,)
+    # check point cloud inliers
+    pc_2_in_CS_1 = utils.geometry.transform_pc_to_world(pose_2_to_1, sf2.pc)
+    pc_error = np.linalg.norm(pc_2_in_CS_1 - sf1.pc, axis=0)
+    pc_inliers = pc_error < 3
 
     inliers = pixel_inliers * pc_inliers
     return inliers

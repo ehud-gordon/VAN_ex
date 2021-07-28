@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Tuple
 
-BITS_TRACKS_PER_IMG = 11 # hack to create great track ids
+BITS_TRACKS_PER_IMG = 11 # hack to create track ids
 
 @dataclass
 class StereoTrack:
@@ -16,11 +16,12 @@ class StereoTrack:
     match_id: int
     point3: np.ndarray # the 3D location
     # the pixels location
-    point2_left : np.ndarray
-    point2_right: np.ndarray
+    point2_left : np.ndarray # (2,)
+    point2_right: np.ndarray # (2,)
     track_length : int
     prev_track: Tuple[int, int] = None # (prev_track_id, prev_track_m_id). Could be None
     next_track: Tuple[int, int] = None # (next_track_id, prev_track_m_id). Could be None
+    
 
     def __post_init__(self):
         self.orig_cam_id, self.orig_match_id = track_id_to_cam_match_idx(self.id)
@@ -32,12 +33,12 @@ class StereoTrack:
 class StereoTracksDB:
     """ Database for storing tracks between frames of stereo images"""
     def __init__(self):
-        self.db = defaultdict(dict) # database
+        self.db = defaultdict(dict)
 
     def __getitem__(self, item):
         return self.db[item]
 
-    def add_frame(self, stereo_features_i, stereo_features_j, matches_i_j):
+    def add(self, stereo_features_i, stereo_features_j, matches_i_j):
         """ add a set of tracks to the database. pixels are matched between frames i and j.
 
         :param stereo_features_i: StereoFeatures object (keypoints + point-cloud) of frame i
@@ -53,7 +54,7 @@ class StereoTracksDB:
         keypoints_left_j = stereo_features_j.keypoints_left
         keypoints_right_j = stereo_features_j.keypoints_right
         pc_j = stereo_features_j.pc  # point-cloud
-
+        
         assert keypoints_left_i.shape[1] == keypoints_right_i.shape[1] == pc_i.shape[1]
         assert keypoints_left_j.shape[1] == keypoints_right_j.shape[1] == pc_j.shape[1]
 
@@ -79,9 +80,11 @@ class StereoTracksDB:
                 track_id = cam_match_idx_to_track_id(i, match_i_id)
                 point2_left_i = keypoints_left_i[:, match_i_id]
                 point2_right_i = keypoints_right_i[:, match_i_id]
+                
                 new_track_i = StereoTrack(id=track_id, point3=point3_i, point2_left=point2_left_i, point2_right=point2_right_i, 
                                           track_length=1, cam_id=i, match_id=match_i_id, next_track=(j, match_j_id))
                 self.db[i][match_i_id] = new_track_i
+                
                 # create track for frame j
                 new_track_j = StereoTrack(id=track_id, point3=point3_j, point2_left=point2_left_j, point2_right=point2_right_j,
                                           track_length=2, cam_id=j, match_id=match_j_id, prev_track=(i, match_i_id))

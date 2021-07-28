@@ -75,34 +75,39 @@ class Poses:
             return Pose3()
         try:
             return self.poses[source_idx][target_idx]
-        except KeyError:
-            pass
+        except KeyError: pass
         try:
             pose_from_target_to_source = self.poses[target_idx][source_idx]
             return pose_from_target_to_source.inverse()
+        except KeyError:  pass
+        try: # try backing up
+            pose_source_to_target = Pose3()
+            for j in range(self.source_idx, target_idx, -1):
+                i = j-1
+                pose_j_to_i = self.poses[j][i]
+                pose_source_to_target = pose_j_to_i.compose(pose_source_to_target)
+            return pose_source_to_target
         except KeyError:
             raise Exception
 
     def to(self, target_idx):
         assert target_idx <= self.source_idx
+        
         if self.status == Status.GET_POSE:
             return self._get_pose_from_to(self.source_idx, target_idx)
+        
         elif self.status == Status.GET_PATH_POSE:
             self.target_idx = target_idx
             return self
+        
         elif self.status == Status.GET_TRANS:
             pose_source_to_target = self._get_pose_from_to(self.source_idx, target_idx)
             return pose_source_to_target.translation()
+        
         elif self.status == Status.GET_DIST:
-            try:
-                pose_source_to_target = self.poses[self.source_idx][target_idx]
-            except KeyError:
-                pose_source_to_target = Pose3()
-                for j in range(self.source_idx, target_idx, -1):
-                    i = j-1
-                    pose_j_to_i = self.poses[j][i]
-                    pose_source_to_target = pose_j_to_i.compose(pose_source_to_target)
+            pose_source_to_target = self._get_pose_from_to(self.source_idx, target_idx)
             return np.linalg.norm(pose_source_to_target.translation())
+        
         elif self.status == Status.SET_POSE:
             self.target_idx = target_idx
             return self
@@ -132,7 +137,7 @@ class Poses:
 
     def get_cumulative_path_poses(self, path_frames, as_np=False):
         """ gets path [target, frame1..., frame_n] and computes cumulative poses from frames to target, using frames along the path.
-        e.g. if path is [0,10,20,30] then reutrns [0_to_0, 10_to_0, 20_to_0, 30_to_10],
+        e.g. if path is [0,10,20,30] then reutrns [0_to_0, 10_to_0, 20_to_0, 30_to_0],
         with 20_to_0 = 10_to_0 @ 20_to_10
 
         :param path_frames: list of n+1 frames [target, frame1, ...., frame_n]
@@ -150,7 +155,7 @@ class Poses:
         else:
             return PoseVector(poses_to_target)
 
-    def get_path_poses(self, path_frames, as_np=False):
+    def get_relative_path_poses(self, path_frames, as_np=False):
         """ gets path [frame1, ..., frame_n] and returns the relative poses along the path.
         e.g. if path is [0,10,20] returns [0_to_0, 10_to_0, 20_to_10].
 

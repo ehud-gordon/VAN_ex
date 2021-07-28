@@ -47,7 +47,7 @@ class PoseVector:
 
         :param pose_vector: PoseVector of size n
         :return:
-            rot_diffs - (n,) of n degrees approximating the size of rotation between two matching rotation matrices
+            rot_diffs - ndarray (n,), where list[i] is the norm of the rvec the two matching rotation matrices
             trans_diffs - (n,3) L2 distnace between two matching translation vectors
         """
         assert len(self) == len(pose_vector)
